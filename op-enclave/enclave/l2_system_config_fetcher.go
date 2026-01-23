@@ -67,15 +67,40 @@ func blockToSystemConfig(rollupCfg *rollup.Config, header *types.Header, txs []*
 			binary.BigEndian.PutUint32(info.L1FeeScalar[24:28], info.BlobBaseFeeScalar)
 			binary.BigEndian.PutUint32(info.L1FeeScalar[28:32], info.BaseFeeScalar)
 		}
-		return eth.SystemConfig{
+		sysCfg := eth.SystemConfig{
 			BatcherAddr: info.BatcherAddr,
 			Overhead:    info.L1FeeOverhead,
 			Scalar:      info.L1FeeScalar,
 			GasLimit:    header.GasLimit,
-		}, err
+		}
+		// Add Isthmus operator fee params
+		if isIsthmusButNotFirstBlock(rollupCfg, header.Time) {
+			sysCfg.OperatorFeeParams = encodeOperatorFeeParams(info.OperatorFeeScalar, info.OperatorFeeConstant)
+		}
+		// Add Jovian DA footprint gas scalar
+		if isJovianButNotFirstBlock(rollupCfg, header.Time) {
+			sysCfg.DAFootprintGasScalar = info.DAFootprintGasScalar
+		}
+		return sysCfg, err
 	}
 }
 
 func isEcotoneButNotFirstBlock(rollupCfg *rollup.Config, l2BlockTime uint64) bool {
 	return rollupCfg.IsEcotone(l2BlockTime) && !rollupCfg.IsEcotoneActivationBlock(l2BlockTime)
+}
+
+func isIsthmusButNotFirstBlock(rollupCfg *rollup.Config, l2BlockTime uint64) bool {
+	return rollupCfg.IsIsthmus(l2BlockTime) && !rollupCfg.IsIsthmusActivationBlock(l2BlockTime)
+}
+
+func isJovianButNotFirstBlock(rollupCfg *rollup.Config, l2BlockTime uint64) bool {
+	return rollupCfg.IsJovian(l2BlockTime) && !rollupCfg.IsJovianActivationBlock(l2BlockTime)
+}
+
+// encodeOperatorFeeParams encodes the operator fee scalar and constant into a Bytes32
+func encodeOperatorFeeParams(scalar uint32, constant uint64) eth.Bytes32 {
+	var encoded eth.Bytes32
+	binary.BigEndian.PutUint32(encoded[20:24], scalar)
+	binary.BigEndian.PutUint64(encoded[24:32], constant)
+	return encoded
 }
