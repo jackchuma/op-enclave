@@ -18,15 +18,13 @@ type l1ReceiptsFetcher struct {
 	hash     common.Hash
 	header   *types.Header
 	receipts types.Receipts
-	cfg      *params.ChainConfig
 }
 
-func NewL1ReceiptsFetcher(hash common.Hash, header *types.Header, receipts types.Receipts, cfg *params.ChainConfig) derive.L1ReceiptsFetcher {
+func NewL1ReceiptsFetcher(hash common.Hash, header *types.Header, receipts types.Receipts) derive.L1ReceiptsFetcher {
 	return &l1ReceiptsFetcher{
 		hash:     hash,
 		header:   header,
 		receipts: receipts,
-		cfg:      cfg,
 	}
 }
 
@@ -37,7 +35,6 @@ func (l *l1ReceiptsFetcher) InfoByHash(ctx context.Context, hash common.Hash) (e
 	return headerInfo{
 		hash:   l.hash,
 		Header: l.header,
-		cfg:    l.cfg,
 	}, nil
 }
 
@@ -52,7 +49,6 @@ func (l *l1ReceiptsFetcher) FetchReceipts(ctx context.Context, blockHash common.
 type headerInfo struct {
 	hash common.Hash
 	*types.Header
-	cfg *params.ChainConfig
 }
 
 var _ eth.BlockInfo = (*headerInfo)(nil)
@@ -89,12 +85,16 @@ func (h headerInfo) BaseFee() *big.Int {
 	return h.Header.BaseFee
 }
 
-func (h headerInfo) BlobBaseFee() *big.Int {
-	return eip4844.CalcBlobFee(h.cfg, h.Header)
+func (h headerInfo) BlobBaseFee(cfg *params.ChainConfig) *big.Int {
+	return eip4844.CalcBlobFee(cfg, h.Header)
 }
 
 func (h headerInfo) ExcessBlobGas() *uint64 {
 	return h.Header.ExcessBlobGas
+}
+
+func (h headerInfo) BlobGasUsed() *uint64 {
+	return h.Header.BlobGasUsed
 }
 
 func (h headerInfo) WithdrawalsRoot() *common.Hash {

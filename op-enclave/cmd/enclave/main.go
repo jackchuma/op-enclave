@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"os"
+	"strconv"
 
 	enclave2 "github.com/base/op-enclave/op-enclave/enclave"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
@@ -10,10 +12,28 @@ import (
 	"github.com/mdlayher/vsock"
 )
 
+const (
+	// defaultHTTPBodyLimit is set to 50MB (increased from go-ethereum's default of 5MB)
+	// because witness data for some blocks can exceed 5MB, causing 413 errors.
+	defaultHTTPBodyLimit = 50 * 1024 * 1024
+)
+
 func main() {
 	oplog.SetupDefaults()
 
 	s := rpc.NewServer()
+	// Set HTTP body limit (configurable via OP_ENCLAVE_HTTP_BODY_LIMIT env var, in bytes)
+	httpBodyLimit := defaultHTTPBodyLimit
+	if envLimit := os.Getenv("OP_ENCLAVE_HTTP_BODY_LIMIT"); envLimit != "" {
+		if parsed, err := strconv.Atoi(envLimit); err == nil && parsed > 0 {
+			httpBodyLimit = parsed
+			log.Info("Using custom HTTP body limit", "bytes", httpBodyLimit)
+		} else {
+			log.Warn("Invalid OP_ENCLAVE_HTTP_BODY_LIMIT, using default", "value", envLimit, "default", defaultHTTPBodyLimit)
+		}
+	}
+	s.SetHTTPBodyLimit(httpBodyLimit)
+
 	serv, err := enclave2.NewServer()
 	if err != nil {
 		log.Crit("Error creating API server", "error", err)

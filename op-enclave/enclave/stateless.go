@@ -80,9 +80,10 @@ func ExecuteStateless(
 		return errors.New("invalid L1 origin")
 	}
 
-	l1Fetcher := NewL1ReceiptsFetcher(l1OriginHash, l1Origin, l1Receipts, config)
+	l1Fetcher := NewL1ReceiptsFetcher(l1OriginHash, l1Origin, l1Receipts)
 	l2Fetcher := NewL2SystemConfigFetcher(rollupConfig, previousBlockHash, previousBlockHeader, previousTxs)
-	attributeBuilder := derive.NewFetchingAttributesBuilder(rollupConfig, l1Fetcher, l2Fetcher)
+	// Pass nil for DependencySet as we don't use interop
+	attributeBuilder := derive.NewFetchingAttributesBuilder(rollupConfig, params.SepoliaChainConfig, nil, l1Fetcher, l2Fetcher)
 	payload, err := attributeBuilder.PreparePayloadAttributes(ctx, l2Parent, eth.BlockID{
 		Hash:   l1OriginHash,
 		Number: l1Origin.Number.Uint64(),

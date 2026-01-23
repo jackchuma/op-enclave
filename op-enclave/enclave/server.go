@@ -230,10 +230,12 @@ func (s *Server) SetSignerKey(ctx context.Context, encrypted hexutil.Bytes) erro
 }
 
 type Proposal struct {
-	OutputRoot    common.Hash
-	Signature     hexutil.Bytes
-	L1OriginHash  common.Hash
-	L2BlockNumber *hexutil.Big
+	OutputRoot     common.Hash
+	Signature      hexutil.Bytes
+	L1OriginHash   common.Hash
+	L2BlockNumber  *hexutil.Big
+	PrevOutputRoot common.Hash
+	ConfigHash     common.Hash
 }
 
 func (s *Server) ExecuteStateless(
@@ -290,10 +292,12 @@ func (s *Server) ExecuteStateless(
 		return nil, err
 	}
 	return &Proposal{
-		OutputRoot:    outputRoot,
-		Signature:     sig,
-		L1OriginHash:  l1OriginHash,
-		L2BlockNumber: (*hexutil.Big)(blockHeader.Number),
+		OutputRoot:     outputRoot,
+		Signature:      sig,
+		L1OriginHash:   l1OriginHash,
+		L2BlockNumber:  (*hexutil.Big)(blockHeader.Number),
+		PrevOutputRoot: prevOutputRoot,
+		ConfigHash:     configHash,
 	}, nil
 }
 
@@ -331,10 +335,12 @@ func (s *Server) Aggregate(ctx context.Context, configHash common.Hash, prevOutp
 	}
 
 	return &Proposal{
-		OutputRoot:    outputRoot,
-		Signature:     sig,
-		L1OriginHash:  l1OriginHash,
-		L2BlockNumber: (*hexutil.Big)(new(big.Int).SetBytes(l2BlockNumber[:])),
+		OutputRoot:     outputRoot,
+		Signature:      sig,
+		L1OriginHash:   l1OriginHash,
+		L2BlockNumber:  (*hexutil.Big)(new(big.Int).SetBytes(l2BlockNumber[:])),
+		PrevOutputRoot: prevOutputRoot,
+		ConfigHash:     configHash,
 	}, nil
 }
 
