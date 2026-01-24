@@ -1,4 +1,4 @@
-module github.com/base/op-enclave/op-enclave
+module github.com/jackchuma/op-enclave/op-enclave
 
 go 1.24.0
 

@@ -5,10 +5,10 @@ import (
 	"os"
 	"strconv"
 
-	enclave2 "github.com/base/op-enclave/op-enclave/enclave"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	enclave2 "github.com/jackchuma/op-enclave/op-enclave/enclave"
 	"github.com/mdlayher/vsock"
 )
 
