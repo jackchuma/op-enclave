@@ -3,3 +3,6 @@
 /testnet/data/
 /testnet/.env
 /bin/
+
+# Build binaries
+op-enclave/enclave-bin

@@ -30,6 +30,8 @@ type RPC interface {
 		witness *stateless.ExecutionWitness,
 		messageAccount *eth.AccountResult,
 		prevMessageAccountHash common.Hash,
+		proposer common.Address,
+		teeImageHash common.Hash,
 	) (*Proposal, error)
-	Aggregate(ctx context.Context, configHash common.Hash, prevOutputRoot common.Hash, proposals []*Proposal) (*Proposal, error)
+	Aggregate(ctx context.Context, configHash common.Hash, prevOutputRoot common.Hash, prevBlockNumber uint64, proposals []*Proposal, proposer common.Address, teeImageHash common.Hash) (*Proposal, error)
 }
