@@ -51,10 +51,11 @@ impl NsmRng {
     }
 
     /// Create a fallback RNG using the OS random source.
+    ///
+    /// On Linux, uses fd = -1 as a sentinel value. The `fill_bytes`
+    /// implementation checks for this and falls back to OsRng.
     #[cfg(target_os = "linux")]
     pub fn fallback() -> Self {
-        // On Linux without NSM, we need to use a different approach
-        // This should only be called in local mode
         Self { fd: -1 }
     }
 }

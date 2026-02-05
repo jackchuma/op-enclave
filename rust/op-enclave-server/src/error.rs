@@ -98,9 +98,6 @@ pub enum CryptoError {
     /// Failed to parse PKIX public key.
     #[error("failed to parse PKIX public key: {0}")]
     PkixParse(String),
-    /// Public key is not RSA.
-    #[error("public key is not RSA")]
-    NotRsaKey,
     /// Failed to encrypt with RSA.
     #[error("RSA encryption failed: {0}")]
     RsaEncrypt(String),

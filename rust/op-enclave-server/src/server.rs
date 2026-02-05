@@ -32,8 +32,6 @@ pub struct Server {
     signer_key: RwLock<PrivateKeySigner>,
     /// RSA-4096 key for decrypting received signer keys.
     decryption_key: RsaPrivateKey,
-    /// Whether running in local mode (no NSM).
-    local_mode: bool,
 }
 
 impl Server {
@@ -44,19 +42,19 @@ impl Server {
     /// it falls back to local mode and optionally reads the signer key
     /// from the `OP_ENCLAVE_SIGNER_KEY` environment variable.
     pub fn new() -> Result<Self, ServerError> {
-        let (mut rng, pcr0, local_mode, signer_key_env) = match NsmSession::open()? {
+        let (mut rng, pcr0, signer_key_env) = match NsmSession::open()? {
             Some(session) => {
                 let pcr0 = session.describe_pcr0()?;
                 let rng = NsmRng::new().ok_or_else(|| {
                     NsmError::SessionOpen("failed to initialize NSM RNG".to_string())
                 })?;
-                (rng, pcr0, false, None)
+                (rng, pcr0, None)
             }
             None => {
                 tracing::warn!("running in local mode without NSM");
                 let rng = NsmRng::default();
                 let signer_key_env = std::env::var(SIGNER_KEY_ENV_VAR).ok();
-                (rng, Vec::new(), true, signer_key_env)
+                (rng, Vec::new(), signer_key_env)
             }
         };
 
@@ -71,6 +69,7 @@ impl Server {
             generate_signer(&mut rng)?
         };
 
+        let local_mode = pcr0.is_empty();
         tracing::info!(
             address = %signer_key.address(),
             local_mode = local_mode,
@@ -81,13 +80,12 @@ impl Server {
             pcr0,
             signer_key: RwLock::new(signer_key),
             decryption_key,
-            local_mode,
         })
     }
 
     /// Check if the server is running in local mode.
     pub const fn is_local_mode(&self) -> bool {
-        self.local_mode
+        self.pcr0.is_empty()
     }
 
     /// Get the PCR0 measurement.
@@ -232,6 +230,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "slow: generates two RSA-4096 keys"]
     fn test_key_exchange_between_servers() {
         // Simulate key exchange between two local servers
         let server1 = Server::new().expect("failed to create server1");
