@@ -22,11 +22,11 @@
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+use op_enclave_server::Server;
 use op_enclave_server::crypto::{
     decrypt_pkcs1v15, encrypt_pkcs1v15, generate_rsa_key, pkix_to_public_key, private_to_public,
     public_key_to_pkix, signer_from_hex,
 };
-use op_enclave_server::Server;
 
 /// Well-known test signer private key (Hardhat account #0).
 const TEST_SIGNER_KEY: &str = "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -56,11 +56,23 @@ impl GoServerHandle {
         // Try to find the enclave binary in various locations
         let possible_paths = [
             // From rust directory: ../op-enclave/op-enclave/bin/enclave
-            cwd.parent().map(|p| p.join("op-enclave").join("op-enclave").join("bin").join("enclave")),
+            cwd.parent().map(|p| {
+                p.join("op-enclave")
+                    .join("op-enclave")
+                    .join("bin")
+                    .join("enclave")
+            }),
             // From rust directory: ../op-enclave/bin/enclave (flat structure)
-            cwd.parent().map(|p| p.join("op-enclave").join("bin").join("enclave")),
+            cwd.parent()
+                .map(|p| p.join("op-enclave").join("bin").join("enclave")),
             // Direct path from workspace root
-            Some(cwd.join("..").join("op-enclave").join("op-enclave").join("bin").join("enclave")),
+            Some(
+                cwd.join("..")
+                    .join("op-enclave")
+                    .join("op-enclave")
+                    .join("bin")
+                    .join("enclave"),
+            ),
         ];
 
         // First check if a server is already running
@@ -158,7 +170,8 @@ impl GoEnclaveClient {
             id: 1,
         };
 
-        let response: JsonRpcResponse<R> = self.client.post(&self.url).json(&request).send()?.json()?;
+        let response: JsonRpcResponse<R> =
+            self.client.post(&self.url).json(&request).send()?.json()?;
 
         if let Some(error) = response.error {
             return Err(format!("JSON-RPC error {}: {}", error.code, error.message).into());
@@ -347,8 +360,7 @@ fn test_rsa_crypto_compatibility() {
     let ecdsa_key = hex::decode(TEST_SIGNER_KEY).expect("valid hex");
     assert_eq!(ecdsa_key.len(), 32, "ECDSA key should be 32 bytes");
 
-    let encrypted =
-        encrypt_pkcs1v15(&mut rng, &public_key, &ecdsa_key).expect("failed to encrypt");
+    let encrypted = encrypt_pkcs1v15(&mut rng, &public_key, &ecdsa_key).expect("failed to encrypt");
 
     // Decrypt
     let decrypted = decrypt_pkcs1v15(&private_key, &encrypted).expect("failed to decrypt");
