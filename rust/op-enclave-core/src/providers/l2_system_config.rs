@@ -152,12 +152,17 @@ impl L2SystemConfigFetcher {
             let mut encoded = [0u8; 32];
             encoded[0] = 1; // version 1
 
-            // Convert U256 to u32 - these are originally u32 values
+            // Per OP Stack spec, base_fee_scalar and blob_base_fee_scalar are always u32 values.
+            // The U256 return type is for API compatibility. If these ever exceed u32::MAX,
+            // it would indicate a protocol violation.
             let blob_scalar: u32 = l1_info
                 .blob_base_fee_scalar()
                 .try_into()
-                .unwrap_or(u32::MAX);
-            let base_scalar: u32 = l1_info.l1_fee_scalar().try_into().unwrap_or(u32::MAX);
+                .expect("blob_base_fee_scalar must fit in u32 per OP Stack spec");
+            let base_scalar: u32 = l1_info
+                .l1_fee_scalar()
+                .try_into()
+                .expect("base_fee_scalar must fit in u32 per OP Stack spec");
 
             encoded[24..28].copy_from_slice(&blob_scalar.to_be_bytes());
             encoded[28..32].copy_from_slice(&base_scalar.to_be_bytes());
@@ -217,8 +222,150 @@ const fn is_fork_active_but_not_activation(fork_time: Option<u64>, l2_time: u64)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloy_primitives::{address, b256, hex};
     use crate::config::default_rollup_config;
     use crate::providers::test_utils::test_header;
+
+    // Test vectors from kona-protocol crate - these are real L1BlockInfo calldata bytes
+    // from mainnet/testnet blocks.
+
+    /// Bedrock format calldata (260 bytes): selector + 8x 32-byte ABI-encoded slots
+    /// Selector: 0x015d8eb9 (keccak256("setL1BlockValues(uint64,uint64,uint256,bytes32,uint64,bytes32,uint256,uint256)"))
+    const BEDROCK_CALLDATA: [u8; 260] = hex!(
+        "015d8eb9000000000000000000000000000000000000000000000000000000000117c4eb0000000000000000000000000000000000000000000000000000000065280377000000000000000000000000000000000000000000000000000000026d05d953392012032675be9f94aae5ab442de73c5f4fb1bf30fa7dd0d2442239899a40fc00000000000000000000000000000000000000000000000000000000000000040000000000000000000000006887246668a3b87f54deb3b94ba47a6f63f3298500000000000000000000000000000000000000000000000000000000000000bc00000000000000000000000000000000000000000000000000000000000a6fe0"
+    );
+
+    /// Ecotone format calldata (164 bytes): selector + packed binary fields
+    /// Selector: 0x440a5e20 (keccak256("setL1BlockValuesEcotone()"))
+    const ECOTONE_CALLDATA: [u8; 164] = hex!(
+        "440a5e2000000558000c5fc5000000000000000500000000661c277300000000012bec20000000000000000000000000000000000000000000000000000000026e9f109900000000000000000000000000000000000000000000000000000000000000011c4c84c50740386c7dc081efddd644405f04cde73e30a2e381737acce9f5add30000000000000000000000006887246668a3b87f54deb3b94ba47a6f63f32985"
+    );
+
+    #[test]
+    fn test_l1_block_info_decode_bedrock_format() {
+        // Decode Bedrock calldata and verify all fields
+        let l1_info = L1BlockInfoTx::decode_calldata(&Bytes::from_static(&BEDROCK_CALLDATA))
+            .expect("valid bedrock calldata");
+
+        // Expected values from the raw hex above
+        assert_eq!(l1_info.batcher_address(), address!("6887246668a3b87f54deb3b94ba47a6f63f32985"));
+        assert_eq!(l1_info.sequence_number(), 4);
+        assert_eq!(l1_info.l1_fee_overhead(), U256::from(0xbc));
+        assert_eq!(l1_info.l1_fee_scalar(), U256::from(0xa6fe0));
+
+        // Bedrock doesn't have blob base fee
+        assert_eq!(l1_info.blob_base_fee(), U256::ZERO);
+        assert_eq!(l1_info.blob_base_fee_scalar(), U256::ZERO);
+
+        // Verify block hash
+        let expected_hash = b256!("392012032675be9f94aae5ab442de73c5f4fb1bf30fa7dd0d2442239899a40fc");
+        assert_eq!(l1_info.block_hash(), expected_hash);
+    }
+
+    #[test]
+    fn test_l1_block_info_decode_ecotone_format() {
+        // Decode Ecotone calldata and verify all fields
+        let l1_info = L1BlockInfoTx::decode_calldata(&Bytes::from_static(&ECOTONE_CALLDATA))
+            .expect("valid ecotone calldata");
+
+        // Expected values from the raw hex above
+        assert_eq!(l1_info.batcher_address(), address!("6887246668a3b87f54deb3b94ba47a6f63f32985"));
+        assert_eq!(l1_info.sequence_number(), 5);
+
+        // Ecotone-specific scalar fields (packed as u32)
+        // From bytes 4-8: 0x00000558 = 1368 (base_fee_scalar)
+        // From bytes 8-12: 0x000c5fc5 = 810949 (blob_base_fee_scalar)
+        assert_eq!(l1_info.l1_fee_scalar(), U256::from(1368u32));
+        assert_eq!(l1_info.blob_base_fee_scalar(), U256::from(810949u32));
+
+        // Blob base fee should be 1 (from the 32-byte slot)
+        assert_eq!(l1_info.blob_base_fee(), U256::from(1));
+
+        // Verify block hash
+        let expected_hash = b256!("1c4c84c50740386c7dc081efddd644405f04cde73e30a2e381737acce9f5add3");
+        assert_eq!(l1_info.block_hash(), expected_hash);
+    }
+
+    #[test]
+    fn test_system_config_from_ecotone_l1_block_info() {
+        // Integration test: parse Ecotone calldata through L2SystemConfigFetcher
+        // and verify the scalar encoding matches Go behavior
+        let mut config = default_rollup_config();
+
+        // Set Ecotone as active (but not activation block)
+        config.hardforks.ecotone_time = Some(100);
+        config.genesis.l2.number = 0;
+        config.genesis.l2.hash = B256::ZERO;
+
+        let block_hash = B256::repeat_byte(0xAA);
+        // Block timestamp must be > ecotone_time to not be the activation block
+        let header = test_header(100, 200);
+
+        let fetcher = L2SystemConfigFetcher::new(
+            config,
+            block_hash,
+            header,
+            Some(Bytes::from_static(&ECOTONE_CALLDATA)),
+        );
+
+        let sys_cfg = fetcher.system_config_by_l2_hash(block_hash)
+            .expect("should extract system config");
+
+        // Verify batcher address extracted correctly
+        assert_eq!(sys_cfg.batcher_address, address!("6887246668a3b87f54deb3b94ba47a6f63f32985"));
+
+        // Verify the scalar is encoded in v1 format:
+        // byte 0: version (1)
+        // bytes 24-28: blob_base_fee_scalar (810949 = 0x000c5fc5)
+        // bytes 28-32: base_fee_scalar (1368 = 0x00000558)
+        let scalar_bytes = sys_cfg.scalar.to_be_bytes::<32>();
+        assert_eq!(scalar_bytes[0], 1, "scalar version should be 1 for ecotone");
+
+        // Extract blob_base_fee_scalar from bytes 24-28
+        let blob_scalar = u32::from_be_bytes([
+            scalar_bytes[24], scalar_bytes[25], scalar_bytes[26], scalar_bytes[27]
+        ]);
+        assert_eq!(blob_scalar, 810949, "blob_base_fee_scalar should match");
+
+        // Extract base_fee_scalar from bytes 28-32
+        let base_scalar = u32::from_be_bytes([
+            scalar_bytes[28], scalar_bytes[29], scalar_bytes[30], scalar_bytes[31]
+        ]);
+        assert_eq!(base_scalar, 1368, "base_fee_scalar should match");
+    }
+
+    #[test]
+    fn test_system_config_from_bedrock_l1_block_info() {
+        // Integration test: parse Bedrock calldata through L2SystemConfigFetcher
+        let mut config = default_rollup_config();
+
+        // Pre-Ecotone (Bedrock era)
+        config.hardforks.ecotone_time = None;
+        config.genesis.l2.number = 0;
+        config.genesis.l2.hash = B256::ZERO;
+
+        let block_hash = B256::repeat_byte(0xBB);
+        let header = test_header(100, 200);
+
+        let fetcher = L2SystemConfigFetcher::new(
+            config,
+            block_hash,
+            header,
+            Some(Bytes::from_static(&BEDROCK_CALLDATA)),
+        );
+
+        let sys_cfg = fetcher.system_config_by_l2_hash(block_hash)
+            .expect("should extract system config");
+
+        // Verify batcher address extracted correctly
+        assert_eq!(sys_cfg.batcher_address, address!("6887246668a3b87f54deb3b94ba47a6f63f32985"));
+
+        // For Bedrock, scalar is the raw l1_fee_scalar value (0xa6fe0)
+        assert_eq!(sys_cfg.scalar, U256::from(0xa6fe0));
+
+        // Overhead should be extracted
+        assert_eq!(sys_cfg.overhead, U256::from(0xbc));
+    }
 
     #[test]
     fn test_genesis_block_returns_genesis_config() {
