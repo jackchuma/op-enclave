@@ -123,4 +123,82 @@ mod tests {
         let encoded = encode_index(128);
         assert_eq!(encoded, vec![0x81, 0x80]);
     }
+
+    #[test]
+    fn test_compute_receipt_root_single_receipt() {
+        use alloy_consensus::{Eip658Value, Receipt, ReceiptWithBloom};
+        use alloy_primitives::Log;
+
+        let inner_receipt = Receipt::<Log> {
+            status: Eip658Value::Eip658(true),
+            cumulative_gas_used: 21000,
+            logs: vec![],
+        };
+
+        let receipt = OpReceiptEnvelope::Legacy(ReceiptWithBloom::new(
+            inner_receipt,
+            alloy_primitives::Bloom::default(),
+        ));
+
+        let root = compute_receipt_root(&[receipt.clone()]);
+
+        // Root should be deterministic and non-empty
+        assert_ne!(root, EMPTY_ROOT_HASH);
+
+        // Same input produces same output
+        let root2 = compute_receipt_root(&[receipt]);
+        assert_eq!(root, root2);
+    }
+
+    #[test]
+    fn test_compute_receipt_root_multiple_receipts() {
+        use alloy_consensus::{Eip658Value, Receipt, ReceiptWithBloom};
+        use alloy_primitives::Log;
+
+        let receipts: Vec<OpReceiptEnvelope> = (0..3)
+            .map(|i| {
+                let inner_receipt = Receipt::<Log> {
+                    status: Eip658Value::Eip658(true),
+                    cumulative_gas_used: 21000 * (i + 1) as u64,
+                    logs: vec![],
+                };
+                OpReceiptEnvelope::Legacy(ReceiptWithBloom::new(
+                    inner_receipt,
+                    alloy_primitives::Bloom::default(),
+                ))
+            })
+            .collect();
+
+        let root = compute_receipt_root(&receipts);
+        assert_ne!(root, EMPTY_ROOT_HASH);
+
+        // Different order or count should produce different roots
+        let root_single = compute_receipt_root(&receipts[..1]);
+        assert_ne!(root, root_single);
+    }
+
+    #[test]
+    fn test_compute_tx_root_single() {
+        // Simple RLP-encoded transaction-like data
+        let tx_rlp = vec![0xc0]; // Empty RLP list
+
+        let root = compute_tx_root(&[tx_rlp.clone()]);
+        assert_ne!(root, EMPTY_ROOT_HASH);
+
+        // Same input produces same output
+        let root2 = compute_tx_root(&[tx_rlp]);
+        assert_eq!(root, root2);
+    }
+
+    #[test]
+    fn test_compute_tx_root_multiple() {
+        let txs: Vec<Vec<u8>> = (0..3).map(|i| vec![0xc0 + i as u8]).collect();
+
+        let root = compute_tx_root(&txs);
+        assert_ne!(root, EMPTY_ROOT_HASH);
+
+        // Different count produces different root
+        let root_single = compute_tx_root(&txs[..1]);
+        assert_ne!(root, root_single);
+    }
 }

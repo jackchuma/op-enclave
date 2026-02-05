@@ -6,7 +6,7 @@
 use alloy_consensus::Header;
 use alloy_primitives::{B256, Bytes, U256};
 use kona_genesis::{RollupConfig, SystemConfig};
-use kona_protocol::L1BlockInfoTx;
+use kona_protocol::{L1BlockInfoIsthmusBaseFields, L1BlockInfoJovianBaseFields, L1BlockInfoTx};
 
 use crate::error::ProviderError;
 
@@ -115,6 +115,8 @@ impl L2SystemConfigFetcher {
             eip1559_elasticity: None,
             operator_fee_scalar: None,
             operator_fee_constant: None,
+            da_footprint_gas_scalar: None,
+            min_base_fee: None,
         };
 
         // Add Isthmus operator fee params
@@ -122,6 +124,15 @@ impl L2SystemConfigFetcher {
             if let L1BlockInfoTx::Isthmus(info) = &l1_info {
                 sys_cfg.operator_fee_scalar = Some(info.operator_fee_scalar);
                 sys_cfg.operator_fee_constant = Some(info.operator_fee_constant);
+            }
+        }
+
+        // Add Jovian operator fee params including da_footprint_gas_scalar
+        if is_jovian_but_not_first_block(&self.config, l2_time) {
+            if let L1BlockInfoTx::Jovian(info) = &l1_info {
+                sys_cfg.operator_fee_scalar = Some(info.operator_fee_scalar());
+                sys_cfg.operator_fee_constant = Some(info.operator_fee_constant());
+                sys_cfg.da_footprint_gas_scalar = Some(info.da_footprint_gas_scalar());
             }
         }
 
@@ -184,6 +195,11 @@ const fn is_ecotone_but_not_first_block(config: &RollupConfig, l2_time: u64) -> 
 /// Checks if Isthmus is active but this is not the activation block.
 const fn is_isthmus_but_not_first_block(config: &RollupConfig, l2_time: u64) -> bool {
     is_fork_active_but_not_activation(config.hardforks.isthmus_time, l2_time)
+}
+
+/// Checks if Jovian is active but this is not the activation block.
+const fn is_jovian_but_not_first_block(config: &RollupConfig, l2_time: u64) -> bool {
+    is_fork_active_but_not_activation(config.hardforks.jovian_time, l2_time)
 }
 
 /// Helper to check if a fork is active but not the activation block.
@@ -290,5 +306,24 @@ mod tests {
     #[test]
     fn test_fork_detection_before_activation() {
         assert!(!is_fork_active_but_not_activation(Some(100), 50));
+    }
+
+    #[test]
+    fn test_is_jovian_but_not_first_block() {
+        let mut config = default_rollup_config();
+
+        // Jovian not configured
+        config.hardforks.jovian_time = None;
+        assert!(!is_jovian_but_not_first_block(&config, 100));
+
+        // Before activation
+        config.hardforks.jovian_time = Some(100);
+        assert!(!is_jovian_but_not_first_block(&config, 50));
+
+        // At activation (first block)
+        assert!(!is_jovian_but_not_first_block(&config, 100));
+
+        // After activation (not first block)
+        assert!(is_jovian_but_not_first_block(&config, 101));
     }
 }
