@@ -99,38 +99,12 @@ impl L1ReceiptsFetcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::Address;
-
-    fn test_header() -> Header {
-        Header {
-            parent_hash: B256::repeat_byte(0x01),
-            ommers_hash: B256::ZERO,
-            beneficiary: Address::repeat_byte(0x02),
-            state_root: B256::repeat_byte(0x03),
-            transactions_root: B256::repeat_byte(0x04),
-            receipts_root: B256::repeat_byte(0x05),
-            logs_bloom: Default::default(),
-            difficulty: Default::default(),
-            number: 12345,
-            gas_limit: 30_000_000,
-            gas_used: 21_000,
-            timestamp: 1_700_000_000,
-            extra_data: Default::default(),
-            mix_hash: B256::repeat_byte(0x06),
-            nonce: Default::default(),
-            base_fee_per_gas: Some(1_000_000_000),
-            withdrawals_root: Some(B256::repeat_byte(0x07)),
-            blob_gas_used: Some(131_072),
-            excess_blob_gas: Some(0),
-            parent_beacon_block_root: Some(B256::repeat_byte(0x08)),
-            requests_hash: None,
-        }
-    }
+    use crate::providers::test_utils::test_header;
 
     #[test]
     fn test_info_by_hash_found() {
         let hash = B256::repeat_byte(0xAA);
-        let header = test_header();
+        let header = test_header(12345, 1_700_000_000);
         let fetcher = L1ReceiptsFetcher::new(hash, header.clone(), vec![]);
 
         let info = fetcher.info_by_hash(hash).unwrap();
@@ -142,7 +116,7 @@ mod tests {
     fn test_info_by_hash_not_found() {
         let hash = B256::repeat_byte(0xAA);
         let wrong_hash = B256::repeat_byte(0xBB);
-        let header = test_header();
+        let header = test_header(12345, 1_700_000_000);
         let fetcher = L1ReceiptsFetcher::new(hash, header, vec![]);
 
         let result = fetcher.info_by_hash(wrong_hash);
@@ -152,7 +126,7 @@ mod tests {
     #[test]
     fn test_fetch_receipts() {
         let hash = B256::repeat_byte(0xAA);
-        let header = test_header();
+        let header = test_header(12345, 1_700_000_000);
         let fetcher = L1ReceiptsFetcher::new(hash, header, vec![]);
 
         let (info, receipts) = fetcher.fetch_receipts(hash).unwrap();
@@ -165,7 +139,7 @@ mod tests {
         use alloy_trie::EMPTY_ROOT_HASH;
 
         let hash = B256::repeat_byte(0xAA);
-        let mut header = test_header();
+        let mut header = test_header(12345, 1_700_000_000);
         header.receipts_root = EMPTY_ROOT_HASH;
 
         let fetcher = L1ReceiptsFetcher::new(hash, header, vec![]);
@@ -175,7 +149,7 @@ mod tests {
     #[test]
     fn test_verify_receipts_mismatch() {
         let hash = B256::repeat_byte(0xAA);
-        let header = test_header(); // receipts_root is 0x05050505...
+        let header = test_header(12345, 1_700_000_000); // receipts_root is 0x05050505...
         let fetcher = L1ReceiptsFetcher::new(hash, header, vec![]);
 
         let result = fetcher.verify_receipts();

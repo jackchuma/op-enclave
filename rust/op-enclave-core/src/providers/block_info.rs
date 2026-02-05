@@ -149,36 +149,11 @@ impl BlockInfoWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn test_header() -> Header {
-        Header {
-            parent_hash: B256::repeat_byte(0x01),
-            ommers_hash: B256::ZERO,
-            beneficiary: Address::repeat_byte(0x02),
-            state_root: B256::repeat_byte(0x03),
-            transactions_root: B256::repeat_byte(0x04),
-            receipts_root: B256::repeat_byte(0x05),
-            logs_bloom: Default::default(),
-            difficulty: Default::default(),
-            number: 12345,
-            gas_limit: 30_000_000,
-            gas_used: 21_000,
-            timestamp: 1_700_000_000,
-            extra_data: Default::default(),
-            mix_hash: B256::repeat_byte(0x06),
-            nonce: Default::default(),
-            base_fee_per_gas: Some(1_000_000_000),
-            withdrawals_root: Some(B256::repeat_byte(0x07)),
-            blob_gas_used: Some(131_072),
-            excess_blob_gas: Some(0),
-            parent_beacon_block_root: Some(B256::repeat_byte(0x08)),
-            requests_hash: None,
-        }
-    }
+    use crate::providers::test_utils::test_header;
 
     #[test]
     fn test_block_info_wrapper_accessors() {
-        let header = test_header();
+        let header = test_header(12345, 1_700_000_000);
         let wrapper = BlockInfoWrapper::from_header(header.clone());
 
         assert_eq!(wrapper.parent_hash(), B256::repeat_byte(0x01));
@@ -205,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_blob_base_fee_calculation() {
-        let mut header = test_header();
+        let mut header = test_header(12345, 1_700_000_000);
         header.excess_blob_gas = Some(0);
         let wrapper = BlockInfoWrapper::from_header(header);
 
@@ -215,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_blob_base_fee_none_when_missing() {
-        let mut header = test_header();
+        let mut header = test_header(12345, 1_700_000_000);
         header.excess_blob_gas = None;
         let wrapper = BlockInfoWrapper::from_header(header);
 
@@ -224,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_hash_consistency() {
-        let header = test_header();
+        let header = test_header(12345, 1_700_000_000);
         let wrapper = BlockInfoWrapper::from_header(header.clone());
 
         // Hash should be consistent with slow hash

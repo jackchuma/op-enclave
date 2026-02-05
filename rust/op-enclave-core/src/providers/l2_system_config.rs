@@ -178,25 +178,20 @@ impl L2SystemConfigFetcher {
 
 /// Checks if Ecotone is active but this is not the activation block.
 const fn is_ecotone_but_not_first_block(config: &RollupConfig, l2_time: u64) -> bool {
-    is_fork_active_but_not_activation(config.hardforks.ecotone_time, l2_time, config.block_time)
+    is_fork_active_but_not_activation(config.hardforks.ecotone_time, l2_time)
 }
 
 /// Checks if Isthmus is active but this is not the activation block.
 const fn is_isthmus_but_not_first_block(config: &RollupConfig, l2_time: u64) -> bool {
-    is_fork_active_but_not_activation(config.hardforks.isthmus_time, l2_time, config.block_time)
+    is_fork_active_but_not_activation(config.hardforks.isthmus_time, l2_time)
 }
 
 /// Helper to check if a fork is active but not the activation block.
-const fn is_fork_active_but_not_activation(
-    fork_time: Option<u64>,
-    l2_time: u64,
-    _block_time: u64,
-) -> bool {
+const fn is_fork_active_but_not_activation(fork_time: Option<u64>, l2_time: u64) -> bool {
     match fork_time {
         Some(activation_time) => {
             // Fork is active if l2_time >= activation_time
             // Not activation block if l2_time > activation_time
-            // (or more precisely, if l2_time >= activation_time + block_time)
             l2_time >= activation_time && l2_time > activation_time
         }
         None => false,
@@ -207,33 +202,7 @@ const fn is_fork_active_but_not_activation(
 mod tests {
     use super::*;
     use crate::config::default_rollup_config;
-    use alloy_primitives::Address;
-
-    fn test_header(number: u64, timestamp: u64) -> Header {
-        Header {
-            parent_hash: B256::repeat_byte(0x01),
-            ommers_hash: B256::ZERO,
-            beneficiary: Address::repeat_byte(0x02),
-            state_root: B256::repeat_byte(0x03),
-            transactions_root: B256::repeat_byte(0x04),
-            receipts_root: B256::repeat_byte(0x05),
-            logs_bloom: Default::default(),
-            difficulty: Default::default(),
-            number,
-            gas_limit: 30_000_000,
-            gas_used: 21_000,
-            timestamp,
-            extra_data: Default::default(),
-            mix_hash: B256::repeat_byte(0x06),
-            nonce: Default::default(),
-            base_fee_per_gas: Some(1_000_000_000),
-            withdrawals_root: Some(B256::repeat_byte(0x07)),
-            blob_gas_used: Some(131_072),
-            excess_blob_gas: Some(0),
-            parent_beacon_block_root: Some(B256::repeat_byte(0x08)),
-            requests_hash: None,
-        }
-    }
+    use crate::providers::test_utils::test_header;
 
     #[test]
     fn test_genesis_block_returns_genesis_config() {
@@ -303,23 +272,23 @@ mod tests {
 
     #[test]
     fn test_fork_detection_not_active() {
-        assert!(!is_fork_active_but_not_activation(None, 100, 2));
+        assert!(!is_fork_active_but_not_activation(None, 100));
     }
 
     #[test]
     fn test_fork_detection_at_activation() {
         // At exactly activation time, should return false (is activation block)
-        assert!(!is_fork_active_but_not_activation(Some(100), 100, 2));
+        assert!(!is_fork_active_but_not_activation(Some(100), 100));
     }
 
     #[test]
     fn test_fork_detection_after_activation() {
         // After activation time, should return true
-        assert!(is_fork_active_but_not_activation(Some(100), 102, 2));
+        assert!(is_fork_active_but_not_activation(Some(100), 102));
     }
 
     #[test]
     fn test_fork_detection_before_activation() {
-        assert!(!is_fork_active_but_not_activation(Some(100), 50, 2));
+        assert!(!is_fork_active_but_not_activation(Some(100), 50));
     }
 }
