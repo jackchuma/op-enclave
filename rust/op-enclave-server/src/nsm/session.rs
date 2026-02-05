@@ -162,8 +162,6 @@ impl Drop for NsmSession {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_open_session_on_non_linux() {
         // On non-Linux, this should return None (local mode)
