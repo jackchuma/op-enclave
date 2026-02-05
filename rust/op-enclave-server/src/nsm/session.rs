@@ -83,7 +83,7 @@ impl NsmSession {
                     Ok(data)
                 }
             }
-            Response::Error(err) => Err(NsmError::DescribePcr(format!("{:?}", err)).into()),
+            Response::Error(err) => Err(NsmError::DescribePcr(format!("{err:?}")).into()),
             _ => Err(NsmError::DescribePcr("unexpected response".to_string()).into()),
         }
     }
@@ -108,7 +108,7 @@ impl NsmSession {
 
         match response {
             Response::Attestation { document } => Ok(document),
-            Response::Error(err) => Err(NsmError::Attestation(format!("{:?}", err)).into()),
+            Response::Error(err) => Err(NsmError::Attestation(format!("{err:?}")).into()),
             _ => Err(NsmError::NoAttestation.into()),
         }
     }
@@ -135,7 +135,7 @@ impl NsmSession {
                     result.extend_from_slice(&random[..to_copy]);
                 }
                 Response::Error(err) => {
-                    return Err(NsmError::Random(format!("{:?}", err)).into());
+                    return Err(NsmError::Random(format!("{err:?}")).into());
                 }
                 _ => {
                     return Err(NsmError::Random("unexpected response".to_string()).into());
