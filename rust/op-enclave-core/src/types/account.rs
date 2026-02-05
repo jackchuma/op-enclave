@@ -51,7 +51,7 @@ pub struct AccountResult {
 impl AccountResult {
     /// Creates a new AccountResult.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         address: Address,
         account_proof: Vec<Bytes>,
         balance: U256,

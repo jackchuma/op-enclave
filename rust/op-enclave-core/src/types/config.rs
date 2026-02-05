@@ -26,7 +26,9 @@ pub const MARSHAL_BINARY_SIZE: usize = 212;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct BlockId {
+    /// The block hash.
     pub hash: B256,
+    /// The block number.
     pub number: u64,
 }
 
@@ -48,9 +50,13 @@ impl Default for BlockId {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct GenesisSystemConfig {
+    /// The address of the batch submitter.
     pub batcher_addr: Address,
+    /// The L1 fee overhead (forced to zero).
     pub overhead: B256,
+    /// The L1 fee scalar.
     pub scalar: B256,
+    /// The gas limit for L2 blocks.
     pub gas_limit: u64,
 }
 
@@ -69,10 +75,14 @@ impl Default for GenesisSystemConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Genesis {
+    /// The L1 block at genesis.
     pub l1: BlockId,
+    /// The L2 block at genesis.
     pub l2: BlockId,
+    /// The timestamp of the L2 genesis block.
     #[serde(default)]
     pub l2_time: u64,
+    /// The system configuration at genesis.
     pub system_config: GenesisSystemConfig,
 }
 
@@ -84,10 +94,15 @@ pub struct Genesis {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PerChainConfig {
+    /// The chain ID.
     pub chain_id: U256,
+    /// The genesis configuration.
     pub genesis: Genesis,
+    /// The target block time in seconds.
     pub block_time: u64,
+    /// The address of the deposit contract on L1.
     pub deposit_contract_address: Address,
+    /// The address of the SystemConfig contract on L1.
     pub l1_system_config_address: Address,
 }
 
@@ -174,7 +189,7 @@ impl PerChainConfig {
     /// - `block_time`: Always 1
     /// - `genesis.l2.number`: Always 0
     /// - `genesis.system_config.overhead`: Always zero
-    pub fn force_defaults(&mut self) {
+    pub const fn force_defaults(&mut self) {
         self.block_time = 1;
         self.genesis.l2.number = 0;
         self.genesis.system_config.overhead = B256::ZERO;
@@ -203,8 +218,8 @@ impl PerChainConfig {
         cfg
     }
 
-    /// Convert our Genesis to kona_genesis::ChainGenesis
-    fn to_chain_genesis(&self) -> kona_genesis::ChainGenesis {
+    /// Convert our Genesis to kona_genesis::ChainGenesis.
+    const fn to_chain_genesis(&self) -> kona_genesis::ChainGenesis {
         use alloy_eips::eip1898::BlockNumHash;
 
         kona_genesis::ChainGenesis {
