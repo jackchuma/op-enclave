@@ -1,0 +1,124 @@
+//! Error types for op-enclave-server operations.
+
+use thiserror::Error;
+
+/// Errors that can occur during NSM operations.
+#[derive(Debug, Error)]
+pub enum NsmError {
+    /// Failed to open NSM session.
+    #[error("failed to open NSM session: {0}")]
+    SessionOpen(String),
+    /// NSM device returned an error.
+    #[error("NSM device error: {0}")]
+    DeviceError(String),
+    /// Failed to describe PCR.
+    #[error("failed to describe PCR: {0}")]
+    DescribePcr(String),
+    /// NSM device did not return PCR data.
+    #[error("NSM device did not return PCR data")]
+    NoPcrData,
+    /// Failed to get attestation.
+    #[error("failed to get attestation: {0}")]
+    Attestation(String),
+    /// NSM device did not return an attestation.
+    #[error("NSM device did not return an attestation")]
+    NoAttestation,
+    /// Failed to get random bytes.
+    #[error("failed to get random bytes: {0}")]
+    Random(String),
+}
+
+/// Errors that can occur during attestation operations.
+#[derive(Debug, Error)]
+pub enum AttestationError {
+    /// Failed to decode CA roots from base64.
+    #[error("failed to decode CA roots: {0}")]
+    Base64Decode(String),
+    /// CA roots checksum mismatch.
+    #[error("CA roots checksum mismatch: expected {expected}, got {actual}")]
+    ChecksumMismatch {
+        /// Expected checksum.
+        expected: String,
+        /// Actual checksum.
+        actual: String,
+    },
+    /// Failed to read CA roots zip.
+    #[error("failed to read CA roots zip: {0}")]
+    ZipRead(String),
+    /// Failed to parse PEM certificate.
+    #[error("failed to parse PEM certificate: {0}")]
+    PemParse(String),
+    /// Failed to verify attestation.
+    #[error("failed to verify attestation: {0}")]
+    Verification(String),
+    /// PCR0 mismatch.
+    #[error("attestation PCR0 does not match expected value")]
+    Pcr0Mismatch,
+    /// Failed to parse CBOR attestation document.
+    #[error("failed to parse CBOR attestation: {0}")]
+    CborParse(String),
+    /// Failed to verify COSE signature.
+    #[error("failed to verify COSE signature: {0}")]
+    CoseVerify(String),
+    /// Certificate chain verification failed.
+    #[error("certificate chain verification failed: {0}")]
+    CertificateChain(String),
+    /// Missing required field in attestation document.
+    #[error("missing required field in attestation: {0}")]
+    MissingField(String),
+}
+
+/// Errors that can occur during cryptographic operations.
+#[derive(Debug, Error)]
+pub enum CryptoError {
+    /// Failed to generate RSA key.
+    #[error("failed to generate RSA key: {0}")]
+    RsaKeyGeneration(String),
+    /// Failed to serialize public key to PKIX format.
+    #[error("failed to serialize public key to PKIX: {0}")]
+    PkixSerialize(String),
+    /// Failed to parse PKIX public key.
+    #[error("failed to parse PKIX public key: {0}")]
+    PkixParse(String),
+    /// Public key is not RSA.
+    #[error("public key is not RSA")]
+    NotRsaKey,
+    /// Failed to encrypt with RSA.
+    #[error("RSA encryption failed: {0}")]
+    RsaEncrypt(String),
+    /// Failed to decrypt with RSA.
+    #[error("RSA decryption failed: {0}")]
+    RsaDecrypt(String),
+    /// Failed to generate ECDSA key.
+    #[error("failed to generate ECDSA key: {0}")]
+    EcdsaKeyGeneration(String),
+    /// Failed to parse ECDSA private key.
+    #[error("failed to parse ECDSA private key: {0}")]
+    EcdsaKeyParse(String),
+    /// Failed to parse hex string.
+    #[error("failed to parse hex string: {0}")]
+    HexParse(String),
+    /// Invalid private key length.
+    #[error("invalid private key length: expected 32 bytes, got {0}")]
+    InvalidPrivateKeyLength(usize),
+}
+
+/// Top-level error type for server operations.
+#[derive(Debug, Error)]
+pub enum ServerError {
+    /// NSM error.
+    #[error(transparent)]
+    Nsm(#[from] NsmError),
+    /// Attestation error.
+    #[error(transparent)]
+    Attestation(#[from] AttestationError),
+    /// Cryptographic error.
+    #[error(transparent)]
+    Crypto(#[from] CryptoError),
+    /// Environment variable error.
+    #[error("environment variable error: {0}")]
+    EnvVar(String),
+}
+
+/// A specialized Result type for server operations.
+pub type Result<T> = std::result::Result<T, ServerError>;
