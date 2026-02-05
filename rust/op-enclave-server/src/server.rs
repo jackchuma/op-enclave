@@ -247,11 +247,13 @@ mod tests {
         let parsed_key = pkix_to_public_key(&public_key).expect("failed to parse key");
 
         let mut rng = rand::rngs::OsRng;
-        let encrypted = encrypt_pkcs1v15(&mut rng, &parsed_key, &private_key)
-            .expect("failed to encrypt");
+        let encrypted =
+            encrypt_pkcs1v15(&mut rng, &parsed_key, &private_key).expect("failed to encrypt");
 
         // Decrypt and set on server2
-        server2.set_signer_key(&encrypted).expect("failed to set key");
+        server2
+            .set_signer_key(&encrypted)
+            .expect("failed to set key");
 
         // Verify both servers now have the same signer address
         assert_eq!(server1.signer_address(), server2.signer_address());

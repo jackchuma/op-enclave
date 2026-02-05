@@ -6,9 +6,9 @@
 use crate::error::{NsmError, ServerError};
 
 #[cfg(target_os = "linux")]
-use aws_nitro_enclaves_nsm_api::driver::{nsm_exit, nsm_init, nsm_process_request};
-#[cfg(target_os = "linux")]
 use aws_nitro_enclaves_nsm_api::api::{Request, Response};
+#[cfg(target_os = "linux")]
+use aws_nitro_enclaves_nsm_api::driver::{nsm_exit, nsm_init, nsm_process_request};
 
 /// A session with the Nitro Secure Module.
 ///
@@ -64,9 +64,7 @@ impl NsmSession {
                     Ok(data)
                 }
             }
-            Response::Error(err) => {
-                Err(NsmError::DescribePcr(format!("{:?}", err)).into())
-            }
+            Response::Error(err) => Err(NsmError::DescribePcr(format!("{:?}", err)).into()),
             _ => Err(NsmError::DescribePcr("unexpected response".to_string()).into()),
         }
     }
@@ -91,9 +89,7 @@ impl NsmSession {
 
         match response {
             Response::Attestation { document } => Ok(document),
-            Response::Error(err) => {
-                Err(NsmError::Attestation(format!("{:?}", err)).into())
-            }
+            Response::Error(err) => Err(NsmError::Attestation(format!("{:?}", err)).into()),
             _ => Err(NsmError::NoAttestation.into()),
         }
     }

@@ -66,6 +66,24 @@ pub enum AttestationError {
     /// Missing required field in attestation document.
     #[error("missing required field in attestation: {0}")]
     MissingField(String),
+    /// Certificate has expired.
+    #[error("certificate expired: not valid after {not_after}")]
+    CertificateExpired {
+        /// The expiry time of the certificate.
+        not_after: String,
+    },
+    /// Certificate is not yet valid.
+    #[error("certificate not yet valid: not valid before {not_before}")]
+    CertificateNotYetValid {
+        /// The not-before time of the certificate.
+        not_before: String,
+    },
+    /// Certificate chain verification failed against trusted root.
+    #[error("certificate chain verification failed: {0}")]
+    ChainVerificationFailed(String),
+    /// X509 store operation error.
+    #[error("X509 store error: {0}")]
+    X509StoreError(String),
 }
 
 /// Errors that can occur during cryptographic operations.

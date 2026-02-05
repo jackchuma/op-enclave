@@ -11,7 +11,9 @@ use rand::CryptoRng;
 use crate::error::{CryptoError, ServerError};
 
 /// Generate a new ECDSA signer with a random private key.
-pub fn generate_signer<R: CryptoRng + rand::RngCore>(rng: &mut R) -> Result<PrivateKeySigner, ServerError> {
+pub fn generate_signer<R: CryptoRng + rand::RngCore>(
+    rng: &mut R,
+) -> Result<PrivateKeySigner, ServerError> {
     let signing_key = SigningKey::random(rng);
     Ok(PrivateKeySigner::from_signing_key(signing_key))
 }
@@ -22,8 +24,8 @@ pub fn signer_from_bytes(bytes: &[u8]) -> Result<PrivateKeySigner, ServerError> 
         return Err(CryptoError::InvalidPrivateKeyLength(bytes.len()).into());
     }
 
-    let signing_key = SigningKey::from_slice(bytes)
-        .map_err(|e| CryptoError::EcdsaKeyParse(e.to_string()))?;
+    let signing_key =
+        SigningKey::from_slice(bytes).map_err(|e| CryptoError::EcdsaKeyParse(e.to_string()))?;
     Ok(PrivateKeySigner::from_signing_key(signing_key))
 }
 

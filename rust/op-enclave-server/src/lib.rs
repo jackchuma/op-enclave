@@ -46,7 +46,7 @@ pub use server::Server;
 
 // Re-export commonly used types
 pub use attestation::{
-    verify_attestation, verify_attestation_with_pcr0, AttestationDocument, VerificationResult,
+    AttestationDocument, VerificationResult, verify_attestation, verify_attestation_with_pcr0,
 };
 pub use crypto::{
     decrypt_pkcs1v15, encrypt_pkcs1v15, generate_rsa_key, generate_signer, pkix_to_public_key,

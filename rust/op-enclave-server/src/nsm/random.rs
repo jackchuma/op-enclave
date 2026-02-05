@@ -5,9 +5,9 @@
 use rand::{CryptoRng, RngCore};
 
 #[cfg(target_os = "linux")]
-use aws_nitro_enclaves_nsm_api::driver::{nsm_init, nsm_exit, nsm_process_request};
-#[cfg(target_os = "linux")]
 use aws_nitro_enclaves_nsm_api::api::{Request, Response};
+#[cfg(target_os = "linux")]
+use aws_nitro_enclaves_nsm_api::driver::{nsm_exit, nsm_init, nsm_process_request};
 
 /// A cryptographically secure random number generator backed by NSM.
 ///
@@ -29,11 +29,7 @@ impl NsmRng {
     #[cfg(target_os = "linux")]
     pub fn new() -> Option<Self> {
         let fd = nsm_init();
-        if fd < 0 {
-            None
-        } else {
-            Some(Self { fd })
-        }
+        if fd < 0 { None } else { Some(Self { fd }) }
     }
 
     /// Create a new NSM-backed RNG.

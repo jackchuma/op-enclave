@@ -4,6 +4,7 @@
 //! to verify Nitro Enclave attestation documents.
 
 use base64::Engine;
+use openssl::x509::X509;
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use x509_cert::Certificate;
@@ -18,15 +19,18 @@ use crate::error::{AttestationError, ServerError};
 pub const DEFAULT_CA_ROOTS: &str = "UEsDBBQAAAAIALkYV1GVtvolRwIAAAkDAAAIABwAcm9vdC5wZW1VVAkAA10ekl9dHpJfdXgLAAEESHEtDwQUAAAAZZJLk6JQDIX3/IrZW10Igo2LWdwXiBoE5HXZCSq0iNgKfYVfP9guJ8tTqS85Ofn4GAszy3b+EOYHtmkTFLCX+CGBbRMWEILSfYGEjVFh+8itnoe4yKq1XC7DDNptcJ2YXJCC2+smtYfzlCEBYhewjQSospASMlwCiSJ40gE5uHAijBrAldny5PaTnRkAan77iBDUiw4B+A9heZxKkedRilflYQZdVl+meW20aayfM8tU0wTEsswdCKonUFuDAPotRUo8ag59axIE3ls84xV4D0FG6gi1mFhF4cBcQNP35GIcGCvlsV504ImXnVffRqLjxpECT2tA6Xt1AFabs7zXu33i91mvXLLaefAkveQDVgEjC/ff1g60BSqYJeFdhzFCX0i1EXYFibZdTWA57Jf0q26/vZ+Ka3BbDVlz2chy2qv8wnYK9vVgVz1OWSZpBjFi3PTtp6li8Xlk7X7vTprSUrNr+FgspofpKlGNIHe9hDA3nWGE7WPgcsEaEqdMKo2LzhtPBHkoL9YOgTEgKkZ//jRA3lLGKBRIMCwP6PCyuPQ0ZhZeWJFYoYfKlPzJMRZ6Ns9vM7feX087nQta/ALcN8CjqLCsV4yEvL2Pd6JIrRBYnEjgkfOpn/hNXi+S7qjxq4hrZxUhTTuhqavH6vbGG7HYchL5e3b82RjdVkn4vdOfLbixdD8BGSFfhv6IcbYS63Vy2M3xrfXMLs2Cz1kjF7hUvsPnRb46d0UNtwY/iftcuJtsMnckW2yGmcz/Sr+fzRz637f/A1BLAQIeAxQAAAAIALkYV1GVtvolRwIAAAkDAAAIABgAAAAAAAEAAACkgQAAAAByb290LnBlbVVUBQADXR6SX3V4CwABBEhxLQ8EFAAAAFBLBQYAAAAAAQABAE4AAACJAgAAAAA=";
 
 /// SHA256 checksum of the decoded CA roots zip.
-pub const DEFAULT_CA_ROOTS_SHA256: &str = "8cf60e2b2efca96c6a9e71e851d00c1b6991cc09eadbe64a6a1d1b1eb9faff7c";
+pub const DEFAULT_CA_ROOTS_SHA256: &str =
+    "8cf60e2b2efca96c6a9e71e851d00c1b6991cc09eadbe64a6a1d1b1eb9faff7c";
 
 /// AWS Nitro Enclave CA root certificate.
 #[derive(Debug, Clone)]
 pub struct AwsCaRoot {
     /// The PEM-encoded certificate data.
     pub pem_data: Vec<u8>,
-    /// The parsed X.509 certificate.
+    /// The parsed X.509 certificate (using x509-cert crate).
     pub certificate: Certificate,
+    /// The parsed X.509 certificate (using OpenSSL) for chain verification.
+    pub openssl_cert: X509,
 }
 
 impl AwsCaRoot {
@@ -56,8 +60,8 @@ impl AwsCaRoot {
 
         // Extract PEM from zip
         let cursor = std::io::Cursor::new(&decoded);
-        let mut archive = zip::ZipArchive::new(cursor)
-            .map_err(|e| AttestationError::ZipRead(e.to_string()))?;
+        let mut archive =
+            zip::ZipArchive::new(cursor).map_err(|e| AttestationError::ZipRead(e.to_string()))?;
 
         let mut pem_data = Vec::new();
         {
@@ -68,20 +72,25 @@ impl AwsCaRoot {
                 .map_err(|e| AttestationError::ZipRead(e.to_string()))?;
         }
 
-        // Parse the PEM certificate
+        // Parse the PEM certificate using x509-cert
         let certificate = Self::parse_pem_certificate(&pem_data)?;
+
+        // Parse the PEM certificate using OpenSSL for chain verification
+        let openssl_cert = X509::from_pem(&pem_data)
+            .map_err(|e| AttestationError::PemParse(format!("OpenSSL PEM parse error: {e}")))?;
 
         Ok(Self {
             pem_data,
             certificate,
+            openssl_cert,
         })
     }
 
     /// Parse a PEM-encoded certificate.
     fn parse_pem_certificate(pem_data: &[u8]) -> Result<Certificate, ServerError> {
         // Find the certificate data between BEGIN and END markers
-        let pem_str = std::str::from_utf8(pem_data)
-            .map_err(|e| AttestationError::PemParse(e.to_string()))?;
+        let pem_str =
+            std::str::from_utf8(pem_data).map_err(|e| AttestationError::PemParse(e.to_string()))?;
 
         let begin_marker = "-----BEGIN CERTIFICATE-----";
         let end_marker = "-----END CERTIFICATE-----";
@@ -113,9 +122,7 @@ static AWS_CA_ROOT: std::sync::OnceLock<Result<AwsCaRoot, String>> = std::sync::
 ///
 /// This is lazily initialized on first call.
 pub fn get_default_ca_root() -> Result<&'static AwsCaRoot, ServerError> {
-    let result = AWS_CA_ROOT.get_or_init(|| {
-        AwsCaRoot::load_default().map_err(|e| e.to_string())
-    });
+    let result = AWS_CA_ROOT.get_or_init(|| AwsCaRoot::load_default().map_err(|e| e.to_string()));
 
     match result {
         Ok(root) => Ok(root),
