@@ -369,7 +369,7 @@ mod tests {
             .unwrap()
             .as_secs() as i64;
         let not_before = Asn1Time::from_unix(now_secs - (20 * 86400)).unwrap(); // 20 days ago
-        let not_after = Asn1Time::from_unix(now_secs - (1 * 86400)).unwrap(); // 1 day ago
+        let not_after = Asn1Time::from_unix(now_secs - 86400).unwrap(); // 1 day ago
         create_test_cert_with_times(not_before, not_after)
     }
 
@@ -379,7 +379,7 @@ mod tests {
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_secs() as i64;
-        let not_before = Asn1Time::from_unix(now_secs + (1 * 86400)).unwrap(); // 1 day from now
+        let not_before = Asn1Time::from_unix(now_secs + 86400).unwrap(); // 1 day from now
         let not_after = Asn1Time::from_unix(now_secs + (10 * 86400)).unwrap(); // 10 days from now
         create_test_cert_with_times(not_before, not_after)
     }

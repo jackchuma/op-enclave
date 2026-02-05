@@ -41,5 +41,10 @@ thiserror.workspace = true
 # Sync primitives
 parking_lot.workspace = true
 
+[dev-dependencies]
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde_json = { workspace = true }
+
 [lints]
 workspace = true

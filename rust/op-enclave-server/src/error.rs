@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 /// Errors that can occur during NSM operations.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum NsmError {
     /// Failed to open NSM session.
     #[error("failed to open NSM session: {0}")]
@@ -29,7 +29,7 @@ pub enum NsmError {
 }
 
 /// Errors that can occur during attestation operations.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum AttestationError {
     /// Failed to decode CA roots from base64.
     #[error("failed to decode CA roots: {0}")]
@@ -87,7 +87,7 @@ pub enum AttestationError {
 }
 
 /// Errors that can occur during cryptographic operations.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum CryptoError {
     /// Failed to generate RSA key.
     #[error("failed to generate RSA key: {0}")]
@@ -119,7 +119,7 @@ pub enum CryptoError {
 }
 
 /// Top-level error type for server operations.
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum ServerError {
     /// NSM error.
     #[error(transparent)]
@@ -137,3 +137,28 @@ pub enum ServerError {
 
 /// A specialized Result type for server operations.
 pub type Result<T> = std::result::Result<T, ServerError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_send_sync<T: Send + Sync>() {}
+
+    #[test]
+    fn error_types_are_send_sync() {
+        assert_send_sync::<NsmError>();
+        assert_send_sync::<AttestationError>();
+        assert_send_sync::<CryptoError>();
+        assert_send_sync::<ServerError>();
+    }
+
+    #[test]
+    fn error_types_are_clone() {
+        fn assert_clone<T: Clone>() {}
+
+        assert_clone::<NsmError>();
+        assert_clone::<AttestationError>();
+        assert_clone::<CryptoError>();
+        assert_clone::<ServerError>();
+    }
+}

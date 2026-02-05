@@ -84,6 +84,7 @@ impl Server {
     }
 
     /// Check if the server is running in local mode.
+    #[must_use]
     pub const fn is_local_mode(&self) -> bool {
         self.pcr0.is_empty()
     }
@@ -91,6 +92,7 @@ impl Server {
     /// Get the PCR0 measurement.
     ///
     /// Returns an empty vector in local mode.
+    #[must_use]
     pub fn pcr0(&self) -> &[u8] {
         &self.pcr0
     }
@@ -98,12 +100,14 @@ impl Server {
     /// Get the signer's public key as a 65-byte uncompressed EC point.
     ///
     /// This matches Go's `crypto.FromECDSAPub()` format.
+    #[must_use]
     pub fn signer_public_key(&self) -> Vec<u8> {
         let signer = self.signer_key.read();
         public_key_bytes(&signer)
     }
 
     /// Get the signer's Ethereum address.
+    #[must_use]
     pub fn signer_address(&self) -> Address {
         let signer = self.signer_key.read();
         signer.address()

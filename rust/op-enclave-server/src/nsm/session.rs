@@ -2,6 +2,25 @@
 //!
 //! This module provides session management for AWS Nitro Enclave's NSM device.
 //! On non-Linux platforms, NSM is unavailable and operations return `None`.
+//!
+//! # Ephemeral Session Pattern
+//!
+//! NSM sessions are intentionally short-lived and opened fresh for each operation
+//! (attestation, PCR read, etc.) rather than maintaining a persistent session.
+//! This design follows several important principles:
+//!
+//! - **Resource hygiene**: The NSM file descriptor is a limited system resource.
+//!   Opening it only when needed and closing it immediately after ensures we don't
+//!   hold onto system resources unnecessarily.
+//!
+//! - **Stateless operations**: Each NSM request is independent. The device doesn't
+//!   maintain state between requests, so there's no benefit to keeping a session open.
+//!
+//! - **Error isolation**: If an NSM operation fails, a fresh session ensures the next
+//!   operation starts with a clean slate rather than inheriting potentially corrupted state.
+//!
+//! - **Go implementation parity**: The Go enclave implementation (`op-enclave/enclave/server.go`)
+//!   follows the same pattern, opening sessions per-operation for consistency.
 
 use crate::error::{NsmError, ServerError};
 
