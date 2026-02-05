@@ -4,6 +4,7 @@
 //! with serialization that matches the Go `encoding/json` output exactly.
 
 pub mod config;
+pub mod error;
 pub mod serde_utils;
 pub mod types;
 
@@ -12,6 +13,9 @@ pub use types::config::{
     BlockId, Genesis, GenesisSystemConfig, MARSHAL_BINARY_SIZE, PerChainConfig, RollupConfig,
 };
 pub use types::proposal::Proposal;
+
+// Re-export error types
+pub use error::{ConfigError, CryptoError, EnclaveError, Result};
 
 // Re-export commonly used types from alloy
 pub use alloy_consensus::Header;
