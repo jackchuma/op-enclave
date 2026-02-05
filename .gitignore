@@ -3,3 +3,5 @@
 /testnet/data/
 /testnet/.env
 /bin/
+
+target/
