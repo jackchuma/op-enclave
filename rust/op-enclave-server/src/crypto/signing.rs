@@ -82,8 +82,7 @@ pub fn sign_proposal_data_sync(
         .map_err(|e| ProposalError::SigningFailed(e.to_string()))?;
 
     // Convert to 65-byte format: r (32) || s (32) || v (1)
-    // Use as_rsy() which returns v as 0 or 1 (parity bit).
-    // Note: Go's crypto.Sign returns v as 27/28, but verification uses only r,s (first 64 bytes).
+    // Use as_rsy() which returns v as 0 or 1 (parity bit), matching Go's crypto.Sign format.
     let sig_bytes = signature.as_rsy();
 
     Ok(Bytes::from(sig_bytes.to_vec()))

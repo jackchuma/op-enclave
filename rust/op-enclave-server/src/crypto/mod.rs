@@ -1,7 +1,7 @@
 //! Cryptographic operations for the enclave server.
 //!
 //! This module provides:
-//! - [`rsa`]: RSA-4096 key generation, PKIX serialization, PKCS1v15 encrypt/decrypt
+//! - [`rsa`]: RSA-4096 key generation, PKIX serialization, `PKCS1v15` encrypt/decrypt
 //! - [`ecdsa`]: ECDSA secp256k1 operations using alloy-signer-local
 //! - [`signing`]: Proposal signing and verification
 

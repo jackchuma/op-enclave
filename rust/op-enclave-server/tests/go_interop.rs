@@ -478,7 +478,7 @@ fn test_signing_data_matches_go() {
     );
 
     // Also verify the hash matches
-    let hash = keccak256(&signing_data);
+    let hash = keccak256(signing_data);
     let expected_hash = hex::decode(EXPECTED_HASH).expect("valid hex");
     assert_eq!(
         hash.as_slice(),
@@ -513,7 +513,7 @@ fn test_verify_go_signature() {
     );
 
     let result = verify_proposal_signature(&go_public_key, &signing_data, &go_signature);
-    assert!(result.is_ok(), "should parse signature: {:?}", result);
+    assert!(result.is_ok(), "should parse signature: {result:?}");
     assert!(result.unwrap(), "Rust should verify Go-produced signature");
 }
 
@@ -576,7 +576,7 @@ fn test_signature_format() {
 
     // v should be 0 or 1 (parity bit)
     let v = signature[64];
-    assert!(v == 0 || v == 1, "v should be 0 or 1, got {}", v);
+    assert!(v == 0 || v == 1, "v should be 0 or 1, got {v}");
 
     // r and s should be non-zero (extremely unlikely to be zero for a real signature)
     let r = &signature[0..32];

@@ -231,7 +231,7 @@ impl Server {
     /// * `block_header` - The L2 block header to validate
     /// * `sequenced_txs` - Sequenced transactions for this block (RLP-encoded)
     /// * `witness` - The execution witness (contains previous block header at headers[0])
-    /// * `message_account` - The L2ToL1MessagePasser account proof
+    /// * `message_account` - The `L2ToL1MessagePasser` account proof
     /// * `prev_message_account_hash` - The storage hash of the message account in the previous block
     ///
     /// # Returns
@@ -678,8 +678,7 @@ mod tests {
                     index: 1
                 }))
             ),
-            "Expected InvalidSignature error at index 1, got: {:?}",
-            result
+"Expected InvalidSignature error at index 1, got: {result:?}"
         );
     }
 }
