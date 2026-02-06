@@ -267,7 +267,7 @@ struct CachingTrieProvider {
 
 impl CachingTrieProvider {
     /// Creates a new CachingTrieProvider with the given shared caches.
-    fn new(
+    const fn new(
         client: reqwest::Client,
         rpc_url: String,
         parent_header: Header,
@@ -594,7 +594,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use alloy_rpc_types_engine::PayloadAttributes;
     use op_alloy_rpc_types_engine::OpPayloadAttributes;
 
-    let parent_sealed = previous_header.clone().seal_slow();
+    let parent_sealed = previous_header.seal_slow();
 
     // Extract EIP-1559 params from extra_data for Holocene+
     let eip_1559_params = if rollup_config.is_holocene_active(block_header.timestamp) {
