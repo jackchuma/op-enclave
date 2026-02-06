@@ -36,13 +36,13 @@ use op_alloy_consensus::OpTxEnvelope;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::Handle;
 
+use op_enclave_core::L1ChainConfig;
 use op_enclave_core::executor::{
     EnclaveEvmFactory, EnclaveTrieHinter, ExecutionWitness, build_l1_block_info_from_deposit,
     extract_deposits_from_receipts, l2_block_to_block_info,
 };
 use op_enclave_core::providers::L2SystemConfigFetcher;
 use op_enclave_core::types::account::AccountResult;
-use op_enclave_core::L1ChainConfig;
 
 /// Command-line arguments for the fixture generator.
 #[derive(Parser, Debug)]
@@ -353,7 +353,10 @@ impl TrieProvider for CachingTrieProvider {
             )));
         }
 
-        eprintln!("    [RPC] Fetched {} bytes for node {key}", node_bytes.len());
+        eprintln!(
+            "    [RPC] Fetched {} bytes for node {key}",
+            node_bytes.len()
+        );
 
         // Cache it
         {
@@ -460,12 +463,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 6. Fetch message account proof
     eprintln!("Fetching message account proof...");
     let message_passer_address = "0x4200000000000000000000000000000000000016".parse::<Address>()?;
-    let message_account = fetch_account_proof(
-        &client,
-        &args.l2_rpc,
-        message_passer_address,
-        block,
-    ).await?;
+    let message_account =
+        fetch_account_proof(&client, &args.l2_rpc, message_passer_address, block).await?;
 
     // 7. Convert initial witness to HashMap<B256, Bytes> format
     let initial_codes: HashMap<B256, Bytes> = witness_response
@@ -511,7 +510,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let l1_config = get_sepolia_l1_config();
 
     // Get L2 parent info and system config
-    let first_prev_tx_bytes = prev_block_response.transactions.first()
+    let first_prev_tx_bytes = prev_block_response
+        .transactions
+        .first()
         .ok_or("Previous block has no transactions")?;
     let first_prev_tx = OpTxEnvelope::decode_2718(&mut first_prev_tx_bytes.as_ref())
         .map_err(|e| format!("Failed to decode previous block deposit tx: {e}"))?;
@@ -526,7 +527,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         previous_header.clone(),
         first_prev_tx_calldata.clone(),
     );
-    let system_config = l2_fetcher.system_config_by_l2_hash(prev_hash)
+    let system_config = l2_fetcher
+        .system_config_by_l2_hash(prev_hash)
         .map_err(|e| format!("Failed to get system config: {e}"))?;
 
     let l2_parent = l2_block_to_block_info(
@@ -534,11 +536,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &previous_header,
         prev_hash,
         first_prev_tx_bytes,
-    ).map_err(|e| format!("Failed to get L2 parent info: {e}"))?;
+    )
+    .map_err(|e| format!("Failed to get L2 parent info: {e}"))?;
 
     // Determine if we need deposits from this L1 block
     let include_deposits = l2_parent.l1_origin.hash != l1_origin_hash;
-    let sequence_number = if include_deposits { 0 } else { l2_parent.seq_num + 1 };
+    let sequence_number = if include_deposits {
+        0
+    } else {
+        l2_parent.seq_num + 1
+    };
 
     eprintln!("  Include deposits: {include_deposits}, sequence: {sequence_number}");
 
@@ -547,11 +554,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Regenerate deposits using the same logic as execute_stateless
     // This ensures the fixture captures the exact trie nodes needed for test execution
-    let receipts_for_deposits: &[ReceiptEnvelope] = if include_deposits {
-        &l1_receipts
-    } else {
-        &[]
-    };
+    let receipts_for_deposits: &[ReceiptEnvelope] =
+        if include_deposits { &l1_receipts } else { &[] };
     let generated_deposits = extract_deposits_from_receipts(
         &rollup_config,
         &l1_config,
@@ -562,19 +566,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         block_header.number,
         block_header.timestamp,
         sequence_number,
-    ).map_err(|e| format!("Failed to extract deposits: {e}"))?;
+    )
+    .map_err(|e| format!("Failed to extract deposits: {e}"))?;
 
     // Combine deposits + sequenced transactions (same as test does)
     let all_txs: Vec<Bytes> = [generated_deposits.clone(), sequenced_txs.clone()].concat();
 
-    eprintln!("  Generated deposits: {}, sequenced txs: {}", generated_deposits.len(), sequenced_txs.len());
+    eprintln!(
+        "  Generated deposits: {}, sequenced txs: {}",
+        generated_deposits.len(),
+        sequenced_txs.len()
+    );
 
     // Build L1BlockInfo from the previous block's deposit (same as test does)
     let spec_id = rollup_config.spec_id(block_header.timestamp);
     let l1_block_info = build_l1_block_info_from_deposit(
-        first_prev_tx_calldata.as_ref().ok_or("No deposit calldata")?,
+        first_prev_tx_calldata
+            .as_ref()
+            .ok_or("No deposit calldata")?,
         spec_id,
-    ).map_err(|e| format!("Failed to build L1BlockInfo: {e}"))?;
+    )
+    .map_err(|e| format!("Failed to build L1BlockInfo: {e}"))?;
 
     // 11. Execute block with CachingTrieProvider to capture all accessed nodes
     eprintln!("Executing block to capture witness...");
@@ -586,7 +598,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Extract EIP-1559 params from extra_data for Holocene+
     let eip_1559_params = if rollup_config.is_holocene_active(block_header.timestamp) {
-        block_header.extra_data.get(1..9)
+        block_header
+            .extra_data
+            .get(1..9)
             .and_then(|s| <[u8; 8]>::try_from(s).ok())
             .map(B64::from)
     } else {
@@ -595,7 +609,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Extract min_base_fee from extra_data for Jovian+
     let min_base_fee = if rollup_config.is_jovian_active(block_header.timestamp) {
-        block_header.extra_data.get(9..17)
+        block_header
+            .extra_data
+            .get(9..17)
             .and_then(|s| <[u8; 8]>::try_from(s).ok())
             .map(u64::from_be_bytes)
     } else {
@@ -626,13 +642,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         parent_sealed,
     );
 
-    let outcome = builder.build_block(attrs)
+    let outcome = builder
+        .build_block(attrs)
         .map_err(|e| format!("Block execution failed: {e}"))?;
 
     eprintln!("  Computed state root: {:?}", outcome.header.state_root);
     eprintln!("  Expected state root: {:?}", block_response.state_root);
-    eprintln!("  Computed receipts root: {:?}", outcome.header.receipts_root);
-    eprintln!("  Expected receipts root: {:?}", block_response.receipts_root);
+    eprintln!(
+        "  Computed receipts root: {:?}",
+        outcome.header.receipts_root
+    );
+    eprintln!(
+        "  Expected receipts root: {:?}",
+        block_response.receipts_root
+    );
 
     // Verify execution results
     let mut validation_errors = Vec::new();
@@ -654,7 +677,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if validation_errors.is_empty() {
         eprintln!("  Execution successful - all roots match!");
     } else {
-        eprintln!("  Execution completed with {} validation warning(s)", validation_errors.len());
+        eprintln!(
+            "  Execution completed with {} validation warning(s)",
+            validation_errors.len()
+        );
         eprintln!("  Continuing to generate fixture with captured witness data...");
     }
 
@@ -665,21 +691,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let final_state = shared_caches.extract_state_cache();
     let final_codes = shared_caches.extract_code_cache();
 
-    eprintln!("  Final codes: {}, state nodes: {}", final_codes.len(), final_state.len());
+    eprintln!(
+        "  Final codes: {}, state nodes: {}",
+        final_codes.len(),
+        final_state.len()
+    );
 
     // Convert to HashMap<String, String> format for serialization
     let codes_map: HashMap<String, String> = final_codes
         .iter()
-        .map(|(hash, bytes)| {
-            (format!("{hash:?}"), format!("0x{}", hex::encode(bytes)))
-        })
+        .map(|(hash, bytes)| (format!("{hash:?}"), format!("0x{}", hex::encode(bytes))))
         .collect();
 
     let state_map: HashMap<String, String> = final_state
         .iter()
-        .map(|(hash, bytes)| {
-            (format!("{hash:?}"), format!("0x{}", hex::encode(bytes)))
-        })
+        .map(|(hash, bytes)| (format!("{hash:?}"), format!("0x{}", hex::encode(bytes))))
         .collect();
 
     // 13. Build the fixture
@@ -759,7 +785,8 @@ async fn fetch_l2_block(
     // Parse hex values
     let gas_limit = u64::from_str_radix(block.gas_limit.trim_start_matches("0x"), 16)?;
     let gas_used = u64::from_str_radix(block.gas_used.trim_start_matches("0x"), 16)?;
-    let base_fee = block.base_fee_per_gas
+    let base_fee = block
+        .base_fee_per_gas
         .as_ref()
         .map(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16))
         .transpose()?;
@@ -836,7 +863,8 @@ async fn fetch_execution_witness(
         return Err(format!(
             "debug_executionWitness error {}: {} (ensure the node supports this method)",
             error.code, error.message
-        ).into());
+        )
+        .into());
     }
 
     response
@@ -867,9 +895,7 @@ async fn fetch_l1_block(
         return Err(format!("RPC error {}: {}", error.code, error.message).into());
     }
 
-    response
-        .result
-        .ok_or_else(|| "L1 block not found".into())
+    response.result.ok_or_else(|| "L1 block not found".into())
 }
 
 /// Fetch L1 receipts for a block.
@@ -932,10 +958,10 @@ async fn fetch_account_proof(
 }
 
 /// Extract L1 origin hash from L1 info deposit tx in the block.
-fn extract_l1_origin_hash(
-    block: &L2BlockResponse,
-) -> Result<B256, Box<dyn std::error::Error>> {
-    let first_tx = block.transactions.first()
+fn extract_l1_origin_hash(block: &L2BlockResponse) -> Result<B256, Box<dyn std::error::Error>> {
+    let first_tx = block
+        .transactions
+        .first()
         .ok_or("Block has no transactions")?;
 
     let tx = OpTxEnvelope::decode_2718(&mut first_tx.as_ref())
@@ -943,7 +969,7 @@ fn extract_l1_origin_hash(
 
     let deposit = match &tx {
         OpTxEnvelope::Deposit(d) => d,
-        _ => return Err("First tx is not a deposit".into())
+        _ => return Err("First tx is not a deposit".into()),
     };
 
     let l1_info = L1BlockInfoTx::decode_calldata(deposit.input.as_ref())
@@ -968,16 +994,16 @@ fn extract_sequenced_txs(block: &L2BlockResponse) -> Vec<Bytes> {
 }
 
 /// Convert L2BlockResponse to Header.
-fn block_response_to_header(
-    block: &L2BlockResponse,
-) -> Result<Header, Box<dyn std::error::Error>> {
+fn block_response_to_header(block: &L2BlockResponse) -> Result<Header, Box<dyn std::error::Error>> {
     // Parse hex strings to u64
     let number = u64::from_str_radix(block.number.trim_start_matches("0x"), 16)?;
     let timestamp = u64::from_str_radix(block.timestamp.trim_start_matches("0x"), 16)?;
 
     Ok(Header {
         parent_hash: block.parent_hash,
-        ommers_hash: alloy_primitives::b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"),
+        ommers_hash: alloy_primitives::b256!(
+            "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"
+        ),
         beneficiary: block.beneficiary,
         state_root: block.state_root,
         transactions_root: block.transactions_root,
@@ -1007,7 +1033,7 @@ fn get_base_sepolia_rollup_config() -> kona_genesis::RollupConfig {
     use kona_genesis::{BaseFeeConfig, ChainGenesis, HardForkConfig, SystemConfig};
 
     kona_genesis::RollupConfig {
-        l1_chain_id: 11155111, // Sepolia
+        l1_chain_id: 11155111,                            // Sepolia
         l2_chain_id: alloy_chains::Chain::from_id(84532), // Base Sepolia
 
         genesis: ChainGenesis {
@@ -1021,7 +1047,9 @@ fn get_base_sepolia_rollup_config() -> kona_genesis::RollupConfig {
             },
             l2_time: 1695768288,
             system_config: Some(SystemConfig {
-                batcher_address: "0x6CDEbe940BC0F26850285cacA097C11c33103E47".parse().unwrap(),
+                batcher_address: "0x6CDEbe940BC0F26850285cacA097C11c33103E47"
+                    .parse()
+                    .unwrap(),
                 gas_limit: 25_000_000,
                 ..SystemConfig::default()
             }),
@@ -1034,9 +1062,15 @@ fn get_base_sepolia_rollup_config() -> kona_genesis::RollupConfig {
         granite_channel_timeout: 50,
 
         // Base Sepolia contract addresses
-        deposit_contract_address: "0x49f53e41452C74589E85cA1677426Ba426459e85".parse().unwrap(),
-        l1_system_config_address: "0xf272670eb55e895584501d564AfEB048bEd26194".parse().unwrap(),
-        batch_inbox_address: "0xfF00000000000000000000000000000000084532".parse().unwrap(),
+        deposit_contract_address: "0x49f53e41452C74589E85cA1677426Ba426459e85"
+            .parse()
+            .unwrap(),
+        l1_system_config_address: "0xf272670eb55e895584501d564AfEB048bEd26194"
+            .parse()
+            .unwrap(),
+        batch_inbox_address: "0xfF00000000000000000000000000000000084532"
+            .parse()
+            .unwrap(),
         protocol_versions_address: Address::ZERO,
         da_challenge_address: None,
         superchain_config_address: None,
@@ -1114,4 +1148,3 @@ fn get_sepolia_l1_config() -> L1ChainConfig {
         ..Default::default()
     }
 }
-

@@ -7,7 +7,7 @@ use alloy_consensus::{Header, Sealed};
 use alloy_evm::precompiles::PrecompilesMap;
 use alloy_evm::{Database, EvmEnv, EvmFactory};
 use alloy_op_evm::OpEvm;
-use alloy_primitives::{Address, B256, B64, Bytes, U256};
+use alloy_primitives::{Address, B64, B256, Bytes, U256};
 use alloy_rpc_types_engine::PayloadAttributes;
 use kona_executor::StatelessL2Builder;
 use kona_genesis::RollupConfig;
@@ -16,11 +16,13 @@ use op_alloy_rpc_types_engine::OpPayloadAttributes;
 use op_revm::precompiles::OpPrecompiles;
 // Re-export L1BlockInfo for use by callers
 pub use op_revm::L1BlockInfo;
-use op_revm::{DefaultOp, OpBuilder, OpContext, OpHaltReason, OpSpecId, OpTransaction, OpTransactionError};
+use op_revm::{
+    DefaultOp, OpBuilder, OpContext, OpHaltReason, OpSpecId, OpTransaction, OpTransactionError,
+};
+use revm::Inspector;
 use revm::context::{BlockEnv, TxEnv};
 use revm::context_interface::result::EVMError;
 use revm::inspector::NoOpInspector;
-use revm::Inspector;
 
 use super::trie_db::EnclaveTrieDB;
 use crate::error::ExecutorError;
@@ -171,7 +173,7 @@ pub fn build_l1_block_info_from_deposit(
         l1_blob_base_fee_scalar,
         operator_fee_scalar,
         operator_fee_constant,
-        da_footprint_gas_scalar: l1_info_tx.da_footprint().map(|v| v as u16),
+        da_footprint_gas_scalar: l1_info_tx.da_footprint(),
         empty_ecotone_scalars: l1_info_tx.empty_scalars(),
         tx_l1_cost: None,
     })
@@ -200,39 +202,31 @@ pub struct EnclaveTrieHinter;
 impl TrieHinter for EnclaveTrieHinter {
     type Error = String;
 
-    fn hint_trie_node(&self, hash: B256) -> Result<(), Self::Error> {
-        #[cfg(test)]
-        println!("[HINT] hint_trie_node: {hash}");
+    fn hint_trie_node(&self, _hash: B256) -> Result<(), Self::Error> {
         // No-op: all state is pre-loaded from witness
         Ok(())
     }
 
-    fn hint_account_proof(&self, address: Address, block_number: u64) -> Result<(), Self::Error> {
-        #[cfg(test)]
-        println!("[HINT] hint_account_proof: {address} at block {block_number}");
+    fn hint_account_proof(&self, _address: Address, _block_number: u64) -> Result<(), Self::Error> {
         // No-op: all state is pre-loaded from witness
         Ok(())
     }
 
     fn hint_storage_proof(
         &self,
-        address: Address,
-        slot: U256,
-        block_number: u64,
+        _address: Address,
+        _slot: U256,
+        _block_number: u64,
     ) -> Result<(), Self::Error> {
-        #[cfg(test)]
-        println!("[HINT] hint_storage_proof: {address} slot {slot} at block {block_number}");
         // No-op: all state is pre-loaded from witness
         Ok(())
     }
 
     fn hint_execution_witness(
         &self,
-        parent_hash: B256,
+        _parent_hash: B256,
         _op_payload_attributes: &OpPayloadAttributes,
     ) -> Result<(), Self::Error> {
-        #[cfg(test)]
-        println!("[HINT] hint_execution_witness: parent {parent_hash}");
         // No-op: witness is already provided
         Ok(())
     }
@@ -378,7 +372,11 @@ mod tests {
         // All hint methods should succeed (no-op)
         assert!(hinter.hint_trie_node(B256::ZERO).is_ok());
         assert!(hinter.hint_account_proof(Address::ZERO, 0).is_ok());
-        assert!(hinter.hint_storage_proof(Address::ZERO, U256::ZERO, 0).is_ok());
+        assert!(
+            hinter
+                .hint_storage_proof(Address::ZERO, U256::ZERO, 0)
+                .is_ok()
+        );
     }
 
     #[test]

@@ -147,9 +147,10 @@ impl TrieProvider for EnclaveTrieDB {
 
     fn trie_node_by_hash(&self, key: B256) -> Result<TrieNode, Self::Error> {
         // Look up the node in our state map
-        let node_bytes = self.state.get(&key).ok_or_else(|| {
-            TrieProviderError(format!("trie node not found for hash: {key}"))
-        })?;
+        let node_bytes = self
+            .state
+            .get(&key)
+            .ok_or_else(|| TrieProviderError(format!("trie node not found for hash: {key}")))?;
 
         // Decode the RLP-encoded node into a TrieNode
         TrieNode::decode(&mut node_bytes.as_ref())
@@ -163,9 +164,10 @@ impl TrieProvider for EnclaveTrieDB {
 /// required by the stateless L2 block executor.
 impl TrieDBProvider for EnclaveTrieDB {
     fn bytecode_by_hash(&self, code_hash: B256) -> Result<Bytes, Self::Error> {
-        self.codes.get(&code_hash).cloned().ok_or_else(|| {
-            TrieProviderError(format!("bytecode not found for hash: {code_hash}"))
-        })
+        self.codes
+            .get(&code_hash)
+            .cloned()
+            .ok_or_else(|| TrieProviderError(format!("bytecode not found for hash: {code_hash}")))
     }
 
     fn header_by_hash(&self, hash: B256) -> Result<Header, Self::Error> {

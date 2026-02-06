@@ -177,7 +177,7 @@ pub fn execute_stateless(
             _ => {
                 return Err(ExecutorError::ExecutionFailed(
                     "first previous block transaction is not a deposit".to_string(),
-                ))
+                ));
             }
         }
     };
@@ -192,11 +192,8 @@ pub fn execute_stateless(
     // Extract deposit transactions from L1 receipts
     // If include_deposits is false (same L1 origin), pass empty receipts to skip user deposits
     // but still generate the L1 info deposit tx
-    let receipts_for_deposits: &[ReceiptEnvelope] = if include_deposits {
-        l1_receipts
-    } else {
-        &[]
-    };
+    let receipts_for_deposits: &[ReceiptEnvelope] =
+        if include_deposits { l1_receipts } else { &[] };
     let deposits = extract_deposits_from_receipts(
         rollup_config,
         l1_config,

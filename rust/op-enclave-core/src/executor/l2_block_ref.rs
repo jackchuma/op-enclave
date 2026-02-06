@@ -4,11 +4,11 @@
 //! and first transaction data, matching the Go `derive.L2BlockToBlockRef()` function.
 
 use alloy_consensus::Header;
-use alloy_eips::eip2718::Decodable2718;
+use alloy_eips::BlockNumHash;
 use alloy_eips::Typed2718;
+use alloy_eips::eip2718::Decodable2718;
 use alloy_primitives::{B256, Bytes};
 use kona_genesis::RollupConfig;
-use alloy_eips::BlockNumHash;
 use kona_protocol::{BlockInfo, L1BlockInfoTx, L2BlockInfo};
 use op_alloy_consensus::OpTxEnvelope;
 
@@ -80,7 +80,7 @@ pub fn l2_block_to_block_info(
             return Err(ExecutorError::ExecutionFailed(format!(
                 "first transaction is not a deposit, type: {}",
                 tx.ty()
-            )))
+            )));
         }
     };
 
@@ -104,16 +104,10 @@ mod tests {
 
     fn test_header(number: u64, timestamp: u64) -> Header {
         Header {
-            parent_hash: b256!(
-                "0000000000000000000000000000000000000000000000000000000000000001"
-            ),
-            ommers_hash: b256!(
-                "1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"
-            ),
+            parent_hash: b256!("0000000000000000000000000000000000000000000000000000000000000001"),
+            ommers_hash: b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"),
             beneficiary: address!("0000000000000000000000000000000000000000"),
-            state_root: b256!(
-                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-            ),
+            state_root: b256!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
             transactions_root: b256!(
                 "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
             ),
@@ -141,15 +135,13 @@ mod tests {
     #[test]
     fn test_genesis_block() {
         let mut config = default_rollup_config();
-        let genesis_hash = b256!(
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        );
+        let genesis_hash =
+            b256!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         config.genesis.l2.number = 0;
         config.genesis.l2.hash = genesis_hash;
         config.genesis.l1.number = 100;
-        config.genesis.l1.hash = b256!(
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        );
+        config.genesis.l1.hash =
+            b256!("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
 
         let header = test_header(0, 1_000_000);
         let first_tx = Bytes::new(); // Empty for genesis
@@ -168,14 +160,11 @@ mod tests {
     fn test_genesis_hash_mismatch() {
         let mut config = default_rollup_config();
         config.genesis.l2.number = 0;
-        config.genesis.l2.hash = b256!(
-            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-        );
+        config.genesis.l2.hash =
+            b256!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
 
         let header = test_header(0, 1_000_000);
-        let wrong_hash = b256!(
-            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-        );
+        let wrong_hash = b256!("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
         let first_tx = Bytes::new();
 
         let result = l2_block_to_block_info(&config, &header, wrong_hash, &first_tx);

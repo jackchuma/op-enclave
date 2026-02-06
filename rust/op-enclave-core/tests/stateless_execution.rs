@@ -11,12 +11,12 @@ use alloy_consensus::{Header, ReceiptEnvelope};
 use alloy_primitives::{B256, Bytes, U256, address, b256};
 use serde::{Deserialize, Serialize};
 
+use op_enclave_core::L1ChainConfig;
 use op_enclave_core::executor::{
-    ExecutionWitness, execute_stateless, validate_not_deposit,
-    validate_sequencer_drift, MAX_SEQUENCER_DRIFT_FJORD,
+    ExecutionWitness, MAX_SEQUENCER_DRIFT_FJORD, execute_stateless, validate_not_deposit,
+    validate_sequencer_drift,
 };
 use op_enclave_core::types::account::{AccountResult, StorageProof};
-use op_enclave_core::L1ChainConfig;
 
 /// Complete test fixture for stateless execution.
 ///
@@ -168,11 +168,14 @@ fn test_validate_not_deposit_with_deposit_tx() {
     // - gas: 1000000 (0xf4240)
     // - isSystemTx: true (0x01)
     // - data: empty
-    let deposit_tx = Bytes::from(hex::decode(
-        "7ef85aa00000000000000000000000000000000000000000000000000000000000000000\
+    let deposit_tx = Bytes::from(
+        hex::decode(
+            "7ef85aa00000000000000000000000000000000000000000000000000000000000000000\
          94deaddeaddeaddeaddeaddeaddeaddeaddead0001\
-         94420000000000000000000000000000000000001580808083f424000180"
-    ).unwrap());
+         94420000000000000000000000000000000000001580808083f424000180",
+        )
+        .unwrap(),
+    );
 
     let result = validate_not_deposit(&deposit_tx);
     // If decoding succeeds, verify it's detected as a deposit

@@ -52,8 +52,8 @@ pub use evm::{
 };
 pub use l2_block_ref::l2_block_to_block_info;
 pub use stateless::{
-    ExecutionResult, L2_TO_L1_MESSAGE_PASSER, MAX_SEQUENCER_DRIFT_FJORD,
-    execute_stateless, validate_not_deposit, validate_sequencer_drift,
+    ExecutionResult, L2_TO_L1_MESSAGE_PASSER, MAX_SEQUENCER_DRIFT_FJORD, execute_stateless,
+    validate_not_deposit, validate_sequencer_drift,
 };
 pub use trie_db::{EnclaveTrieDB, TrieProviderError};
 pub use witness::{ExecutionWitness, TransformedWitness, transform_witness};
