@@ -29,5 +29,22 @@ hex.workspace = true
 hex-literal.workspace = true
 thiserror.workspace = true
 
+# Optional dependencies for fixture generator binary
+tokio = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+
+[features]
+default = []
+fixture-generator = ["tokio", "reqwest", "clap"]
+
+[[bin]]
+name = "generate_fixtures"
+path = "src/bin/generate_fixtures.rs"
+required-features = ["fixture-generator"]
+
+[dev-dependencies]
+hex = { workspace = true }
+
 [lints]
 workspace = true

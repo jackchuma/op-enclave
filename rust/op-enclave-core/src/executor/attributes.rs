@@ -115,7 +115,7 @@ fn build_l1_info_deposit_tx(
     l1_config: &L1ChainConfig,
     system_config: &SystemConfig,
     l1_origin: &Header,
-    l2_block_number: u64,
+    _l2_block_number: u64,
     l2_timestamp: u64,
     sequence_number: u64,
 ) -> Result<Bytes, ExecutorError> {
@@ -135,9 +135,6 @@ fn build_l1_info_deposit_tx(
     // Encode the deposit transaction
     let mut encoded = Vec::new();
     deposit_tx.encode_2718(&mut encoded);
-
-    // Log for debugging (remove in production)
-    let _ = l2_block_number; // Used for future logging/metrics
 
     Ok(Bytes::from(encoded))
 }

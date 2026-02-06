@@ -100,8 +100,13 @@ impl AccountResult {
         let key = Nibbles::unpack(key_hash);
 
         // RLP encode the account: (nonce, balance, storage_hash, code_hash)
+        // Account nonces in Ethereum are u64, so this conversion is safe.
+        // U256 representation is for JSON-RPC compatibility.
         let account = Account {
-            nonce: self.nonce.try_into().unwrap_or(u64::MAX),
+            nonce: self
+                .nonce
+                .try_into()
+                .expect("account nonce exceeds u64::MAX, which is invalid for Ethereum"),
             balance: self.balance,
             storage_root: self.storage_hash,
             code_hash: self.code_hash,

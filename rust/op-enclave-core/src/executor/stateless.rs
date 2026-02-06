@@ -164,59 +164,38 @@ pub fn execute_stateless(
     let trie_db = EnclaveTrieDB::from_witness(transformed);
 
     // 7-8. Build all transactions and execute via EVM
-    let all_txs = if include_deposits {
-        // Get system config from L2 fetcher using previous block
-        let first_prev_tx_data = previous_block_txs.first().cloned();
-        let l2_fetcher = L2SystemConfigFetcher::new(
-            rollup_config.clone(),
-            previous_block_hash,
-            previous_header.clone(),
-            first_prev_tx_data,
-        );
-        let system_config = l2_fetcher.system_config_by_l2_hash(previous_block_hash)?;
+    // Get system config from L2 fetcher using previous block
+    let first_prev_tx_data = previous_block_txs.first().cloned();
+    let l2_fetcher = L2SystemConfigFetcher::new(
+        rollup_config.clone(),
+        previous_block_hash,
+        previous_header.clone(),
+        first_prev_tx_data,
+    );
+    let system_config = l2_fetcher.system_config_by_l2_hash(previous_block_hash)?;
 
-        // Extract deposit transactions from L1 receipts
-        let deposits = extract_deposits_from_receipts(
-            rollup_config,
-            l1_config,
-            &system_config,
-            l1_origin,
-            l1_origin_hash,
-            l1_receipts,
-            block_header.number,
-            block_header.timestamp,
-            sequence_number,
-        )?;
-
-        // Combine deposits + sequenced transactions
-        [deposits, sequenced_txs.to_vec()].concat()
+    // Extract deposit transactions from L1 receipts
+    // If include_deposits is false (same L1 origin), pass empty receipts to skip user deposits
+    // but still generate the L1 info deposit tx
+    let receipts_for_deposits: &[OpReceiptEnvelope] = if include_deposits {
+        l1_receipts
     } else {
-        // Same L1 origin - only sequenced transactions (no new deposits)
-        // Still need L1 info deposit tx for the block
-        let first_prev_tx_data = previous_block_txs.first().cloned();
-        let l2_fetcher = L2SystemConfigFetcher::new(
-            rollup_config.clone(),
-            previous_block_hash,
-            previous_header.clone(),
-            first_prev_tx_data,
-        );
-        let system_config = l2_fetcher.system_config_by_l2_hash(previous_block_hash)?;
-
-        // Extract L1 info deposit (with no user deposits since same origin)
-        let deposits = extract_deposits_from_receipts(
-            rollup_config,
-            l1_config,
-            &system_config,
-            l1_origin,
-            l1_origin_hash,
-            &[], // No receipts to process for user deposits
-            block_header.number,
-            block_header.timestamp,
-            sequence_number,
-        )?;
-
-        [deposits, sequenced_txs.to_vec()].concat()
+        &[]
     };
+    let deposits = extract_deposits_from_receipts(
+        rollup_config,
+        l1_config,
+        &system_config,
+        l1_origin,
+        l1_origin_hash,
+        receipts_for_deposits,
+        block_header.number,
+        block_header.timestamp,
+        sequence_number,
+    )?;
+
+    // Combine deposits + sequenced transactions
+    let all_txs = [deposits, sequenced_txs.to_vec()].concat();
 
     // Create sealed parent header for builder
     let parent_sealed = previous_header.seal_slow();
