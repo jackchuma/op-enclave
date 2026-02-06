@@ -678,7 +678,7 @@ mod tests {
                     index: 1
                 }))
             ),
-"Expected InvalidSignature error at index 1, got: {result:?}"
+            "Expected InvalidSignature error at index 1, got: {result:?}"
         );
     }
 }

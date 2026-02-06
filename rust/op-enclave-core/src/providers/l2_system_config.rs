@@ -84,13 +84,9 @@ impl L2SystemConfigFetcher {
                 });
             }
             // Return genesis system config
-            return self
-                .config
-                .genesis
-                .system_config
-                .ok_or_else(|| ProviderError::L1InfoParseError(
-                    "genesis system config not set".to_string(),
-                ));
+            return self.config.genesis.system_config.ok_or_else(|| {
+                ProviderError::L1InfoParseError("genesis system config not set".to_string())
+            });
         }
 
         // Non-genesis block: parse L1 info from deposit tx
