@@ -30,6 +30,7 @@ ENV OPENSSL_INCLUDE_DIR=/usr/include
 
 # Install linuxkit at the specific commit
 RUN go install github.com/linuxkit/linuxkit/src/cmd/linuxkit@270fd1c5aa1986977b31af6c743c6a2681f67a29
+ENV PATH="${PATH}:/root/go/bin"
 
 WORKDIR /build
 
