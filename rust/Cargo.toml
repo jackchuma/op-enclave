@@ -77,6 +77,10 @@ missing-docs = "warn"
 unreachable-pub = "warn"
 unused-must-use = "deny"
 rust-2018-idioms = "deny"
+unnameable-types = "warn"
+
+[workspace.lints.rustdoc]
+all = "warn"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -86,3 +90,32 @@ use-self = "warn"
 uninlined-format-args = "warn"
 undocumented-unsafe-blocks = "warn"
 derive-partial-eq-without-eq = "warn"
+
+# Performance & Cloning
+clone-on-ref-ptr = "warn"
+unnecessary-to-owned = "warn"
+cloned-instead-of-copied = "warn"
+flat-map-option = "warn"
+implicit-clone = "warn"
+or-fun-call = "warn"
+
+# Code Style
+option-if-let-else = "warn"
+manual-string-new = "warn"
+single-char-pattern = "warn"
+redundant-else = "warn"
+match-same-arms = "warn"
+
+# Documentation
+doc-markdown = "warn"
+
+# Debugging Artifacts
+dbg-macro = "warn"
+
+# Code Quality
+branches-sharing-code = "warn"
+explicit-into-iter-loop = "warn"
+explicit-iter-loop = "warn"
+iter-with-drain = "warn"
+needless-pass-by-ref-mut = "warn"
+string-lit-as-bytes = "warn"
