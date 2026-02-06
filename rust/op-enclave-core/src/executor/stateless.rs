@@ -9,6 +9,7 @@ use alloy_primitives::{Address, B256, Bytes, address};
 use kona_genesis::RollupConfig;
 use op_alloy_consensus::{OpReceiptEnvelope, OpTxEnvelope};
 
+use super::l2_block_ref::l2_block_to_block_info;
 use super::trie_db::EnclaveTrieDB;
 use super::witness::{ExecutionWitness, transform_witness};
 use crate::error::ExecutorError;
@@ -74,7 +75,7 @@ pub struct ExecutionResult {
 /// Returns an error if any validation check fails.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_stateless(
-    _rollup_config: &RollupConfig,
+    rollup_config: &RollupConfig,
     l1_origin: &Header,
     l1_receipts: &[OpReceiptEnvelope],
     previous_block_txs: &[Bytes],
@@ -114,14 +115,40 @@ pub fn execute_stateless(
         return Err(ExecutorError::InvalidTxHash);
     }
 
-    // 5. Verify L1 origin is valid (stateless.go:79-81)
+    // 5. Verify L1 origin is valid (stateless.go:74-81)
+    // Parse L2BlockInfo from the previous block to get its L1 origin
+    let first_prev_tx = previous_block_txs.first().ok_or_else(|| {
+        ExecutorError::ExecutionFailed("previous block has no transactions".to_string())
+    })?;
+
+    let l2_parent = l2_block_to_block_info(
+        rollup_config,
+        previous_header,
+        previous_block_hash,
+        first_prev_tx,
+    )?;
+
+    let l1_origin_hash = l1_origin.hash_slow();
+
     // The L2 parent's L1 origin must be either the current L1 origin or its parent
-    // This check is simplified here - full implementation would use L2BlockRef
-    let _l1_origin_hash = l1_origin.hash_slow();
-    // Skip this check for now as we don't have full L2BlockRef parsing
-    // In the full implementation, we would:
-    // - Parse L2BlockRef from previous block
-    // - Check l2_parent.l1_origin.hash == l1_origin_hash || l2_parent.l1_origin.hash == l1_origin.parent_hash
+    if l2_parent.l1_origin.hash != l1_origin_hash
+        && l2_parent.l1_origin.hash != l1_origin.parent_hash
+    {
+        return Err(ExecutorError::InvalidL1Origin);
+    }
+
+    // Check if L1 origin changed (need deposits from this L1 block)
+    let include_deposits = l2_parent.l1_origin.hash != l1_origin_hash;
+
+    // Calculate sequence number for deposit building
+    let sequence_number = if include_deposits {
+        0 // New L1 origin, start sequence at 0
+    } else {
+        l2_parent.seq_num + 1 // Same L1 origin, increment sequence
+    };
+
+    // Store for potential future use in deposit extraction
+    let _ = (include_deposits, sequence_number);
 
     // 6. Check sequenced transactions don't include deposits (stateless.go:100-104)
     for tx_bytes in sequenced_txs {
@@ -137,10 +164,20 @@ pub fn execute_stateless(
     let trie_db = EnclaveTrieDB::from_witness(transformed);
 
     // 7-8. State root and receipt hash verification
-    // In a full implementation, this would:
-    // - Build the block with deposits + sequenced transactions
-    // - Execute the block using kona-executor
-    // - Compare computed state root and receipt hash with expected values
+    //
+    // Full EVM execution flow (stateless.go:86-131):
+    // 1. If include_deposits:
+    //    - Get system config via L2SystemConfigFetcher
+    //    - Call extract_deposits_from_receipts() to build:
+    //      a. L1 info deposit tx (first)
+    //      b. User deposits from L1 receipts
+    // 2. Build all_txs = deposits + sequenced_txs
+    // 3. Execute via StatelessL2Builder.build_block(attrs)
+    // 4. Verify computed state_root matches block_header.state_root
+    // 5. Verify computed receipts_root matches block_header.receipts_root
+    //
+    // The EnclaveTrieDB implements TrieProvider and TrieDBProvider traits
+    // required by kona-executor's StatelessL2Builder.
     //
     // For now, we trust the provided header values as the actual execution
     // requires full EVM integration with kona-executor.

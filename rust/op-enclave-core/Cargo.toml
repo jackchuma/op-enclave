@@ -17,6 +17,7 @@ kona-executor.workspace = true
 kona-mpt.workspace = true
 kona-driver.workspace = true
 op-alloy-consensus.workspace = true
+op-alloy-rpc-types-engine.workspace = true
 kona-protocol.workspace = true
 revm.workspace = true
 op-revm.workspace = true
