@@ -5,12 +5,16 @@
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use jsonrpsee::server::Server as JsonRpcServer;
 
 use op_enclave_server::rpc::{EnclaveApiServer, RpcServerImpl};
 use op_enclave_server::transport::TransportConfig;
 use op_enclave_server::Server;
+
+/// Read timeout for vsock connections (5 minutes).
+const VSOCK_READ_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -67,6 +71,11 @@ async fn try_vsock_server(
     loop {
         let (mut stream, peer_addr) = listener.accept()?;
 
+        // Set read timeout to prevent hanging on slow/stuck clients
+        if let Err(e) = stream.set_read_timeout(Some(VSOCK_READ_TIMEOUT)) {
+            tracing::warn!("failed to set vsock read timeout: {e}");
+        }
+
         tracing::debug!(
             cid = peer_addr.cid(),
             port = peer_addr.port(),
@@ -78,7 +87,7 @@ async fn try_vsock_server(
         // Handle each connection in a blocking task
         tokio::task::spawn_blocking(move || {
             // Read the request
-            let mut buffer = vec![0u8; 1024 * 1024]; // 1MB buffer
+            let mut buffer = vec![0u8; 50 * 1024 * 1024]; // 50MB buffer (matches HTTP body limit)
             let mut total_read = 0;
 
             // Read until we have a complete JSON-RPC request
@@ -97,6 +106,13 @@ async fn try_vsock_server(
                                 }
                             }
                         }
+                    }
+                    Err(ref e)
+                        if e.kind() == std::io::ErrorKind::WouldBlock
+                            || e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        tracing::warn!("vsock read timeout");
+                        return;
                     }
                     Err(e) => {
                         tracing::warn!("vsock read error: {e}");

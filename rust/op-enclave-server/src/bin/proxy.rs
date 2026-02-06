@@ -3,8 +3,12 @@
 //! This is a small HTTP proxy that forwards requests to a vsock service,
 //! matching Go's `cmd/server/main.go`.
 
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::SocketAddr;
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use http_body_util::{BodyExt, Full};
 use hyper::body::Bytes;
@@ -18,6 +22,46 @@ use op_enclave_server::transport::{DEFAULT_PROXY_PORT, DEFAULT_VSOCK_CID, DEFAUL
 
 #[cfg(unix)]
 use vsock::{VsockAddr, VsockStream};
+
+/// Connection pool for vsock connections.
+/// Matches Go's sync.Pool pattern.
+#[cfg(unix)]
+struct VsockPool {
+    connections: Mutex<VecDeque<VsockStream>>,
+    cid: u32,
+    port: u32,
+}
+
+#[cfg(unix)]
+impl VsockPool {
+    const fn new(cid: u32, port: u32) -> Self {
+        Self {
+            connections: Mutex::new(VecDeque::new()),
+            cid,
+            port,
+        }
+    }
+
+    /// Get a connection from the pool or create a new one.
+    fn get(&self) -> Option<VsockStream> {
+        // Try to get an existing connection
+        if let Some(conn) = self.connections.lock().pop_front() {
+            return Some(conn);
+        }
+        // Create new connection
+        VsockStream::connect(&VsockAddr::new(self.cid, self.port)).ok()
+    }
+
+    /// Return a connection to the pool.
+    fn put(&self, conn: VsockStream) {
+        let mut conns = self.connections.lock();
+        // Limit pool size to prevent unbounded growth
+        if conns.len() < 10 {
+            conns.push_back(conn);
+        }
+        // Connection dropped if pool is full
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -56,6 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "starting HTTP proxy to vsock"
         );
 
+        let pool = Arc::new(VsockPool::new(cid, vsock_port));
         let listener = TcpListener::bind(addr).await?;
 
         loop {
@@ -63,13 +108,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             tracing::debug!(peer = %peer_addr, "accepted connection");
 
+            let pool = Arc::clone(&pool);
             tokio::spawn(async move {
                 let io = TokioIo::new(stream);
 
                 let service = service_fn(move |req: Request<hyper::body::Incoming>| {
-                    let cid = cid;
-                    let vsock_port = vsock_port;
-                    async move { handle_request(req, cid, vsock_port).await }
+                    let pool = Arc::clone(&pool);
+                    async move { handle_request(req, pool).await }
                 });
 
                 if let Err(e) = http1::Builder::new().serve_connection(io, service).await {
@@ -84,8 +129,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 #[cfg(unix)]
 async fn handle_request(
     req: Request<hyper::body::Incoming>,
-    cid: u32,
-    port: u32,
+    pool: Arc<VsockPool>,
 ) -> Result<Response<Full<Bytes>>, hyper::Error> {
     // Only handle POST requests
     if req.method() != Method::POST {
@@ -99,7 +143,7 @@ async fn handle_request(
     let body = req.collect().await?.to_bytes();
 
     // Forward to vsock in a blocking task
-    let response = tokio::task::spawn_blocking(move || forward_to_vsock(cid, port, &body))
+    let response = tokio::task::spawn_blocking(move || forward_to_vsock(&pool, &body))
         .await
         .map_err(|e| {
             tracing::error!("spawn_blocking error: {e}");
@@ -125,12 +169,15 @@ async fn handle_request(
 
 /// Forward a request to vsock and return the response.
 #[cfg(unix)]
-fn forward_to_vsock(cid: u32, port: u32, request: &[u8]) -> Option<Vec<u8>> {
-    // Connect to vsock
-    let mut conn = VsockStream::connect(&VsockAddr::new(cid, port)).ok()?;
+fn forward_to_vsock(pool: &VsockPool, request: &[u8]) -> Option<Vec<u8>> {
+    // Get connection from pool or create new one
+    let mut conn = pool.get()?;
 
     // Write the request
-    conn.write_all(request).ok()?;
+    if conn.write_all(request).is_err() {
+        // Connection may be stale, don't return to pool
+        return None;
+    }
 
     // Read the response
     let mut response = Vec::new();
@@ -152,8 +199,11 @@ fn forward_to_vsock(cid: u32, port: u32, request: &[u8]) -> Option<Vec<u8>> {
     }
 
     if response.is_empty() {
+        // Don't return failed connection to pool
         None
     } else {
+        // Return connection to pool for reuse
+        pool.put(conn);
         Some(response)
     }
 }
