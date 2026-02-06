@@ -7,10 +7,10 @@ use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
 use serde::{Deserialize, Serialize};
 
+use op_enclave_core::Proposal;
 use op_enclave_core::executor::ExecutionWitness;
 use op_enclave_core::types::account::AccountResult;
 use op_enclave_core::types::config::PerChainConfig;
-use op_enclave_core::Proposal;
 
 use crate::client_error::ClientError;
 

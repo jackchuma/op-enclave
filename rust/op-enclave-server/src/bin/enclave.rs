@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use jsonrpsee::server::Server as JsonRpcServer;
 
+use op_enclave_server::Server;
 use op_enclave_server::rpc::{EnclaveApiServer, RpcServerImpl};
 use op_enclave_server::transport::TransportConfig;
-use op_enclave_server::Server;
 
 /// Read timeout for vsock connections (5 minutes).
 const VSOCK_READ_TIMEOUT: Duration = Duration::from_secs(300);
@@ -57,7 +57,7 @@ async fn try_vsock_server(
     config: &TransportConfig,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use std::io::{Read, Write};
-    use vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY};
+    use vsock::{VMADDR_CID_ANY, VsockAddr, VsockListener};
 
     let addr = VsockAddr::new(VMADDR_CID_ANY, config.vsock_port);
     let listener = VsockListener::bind(&addr)?;

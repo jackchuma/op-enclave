@@ -10,7 +10,6 @@ use op_enclave_core::Proposal;
 
 use super::types::{AggregateRequest, ExecuteStatelessRequest};
 
-
 /// Enclave RPC API trait.
 ///
 /// This trait defines the JSON-RPC interface for the enclave server.

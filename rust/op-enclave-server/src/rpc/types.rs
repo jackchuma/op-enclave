@@ -7,10 +7,10 @@ use alloy_consensus::{Header, ReceiptEnvelope};
 use alloy_primitives::{B256, Bytes};
 use serde::{Deserialize, Serialize};
 
+use op_enclave_core::Proposal;
 use op_enclave_core::executor::ExecutionWitness;
 use op_enclave_core::types::account::AccountResult;
 use op_enclave_core::types::config::PerChainConfig;
-use op_enclave_core::Proposal;
 
 /// Request for the `executeStateless` RPC method.
 ///

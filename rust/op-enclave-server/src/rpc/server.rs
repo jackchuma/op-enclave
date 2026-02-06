@@ -8,13 +8,13 @@ use alloy_primitives::Bytes;
 use async_trait::async_trait;
 use jsonrpsee::types::ErrorObjectOwned;
 
-use op_enclave_core::config::default_l1_config;
 use op_enclave_core::Proposal;
+use op_enclave_core::config::default_l1_config;
 
 use super::api::EnclaveApiServer;
 use super::types::{AggregateRequest, ExecuteStatelessRequest};
-use crate::error::ServerError;
 use crate::Server;
+use crate::error::ServerError;
 
 /// RPC server implementation wrapping the core `Server`.
 #[derive(Debug, Clone)]
@@ -69,9 +69,7 @@ impl EnclaveApiServer for RpcServerImpl {
     }
 
     async fn set_signer_key(&self, encrypted: Bytes) -> Result<(), ErrorObjectOwned> {
-        self.server
-            .set_signer_key(&encrypted)
-            .map_err(to_rpc_error)
+        self.server.set_signer_key(&encrypted).map_err(to_rpc_error)
     }
 
     async fn execute_stateless(
@@ -101,7 +99,11 @@ impl EnclaveApiServer for RpcServerImpl {
 
     async fn aggregate(&self, request: AggregateRequest) -> Result<Proposal, ErrorObjectOwned> {
         self.server
-            .aggregate(request.config_hash, request.prev_output_root, &request.proposals)
+            .aggregate(
+                request.config_hash,
+                request.prev_output_root,
+                &request.proposals,
+            )
             .map_err(to_rpc_error)
     }
 }
