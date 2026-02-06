@@ -3,11 +3,11 @@
 //! This module provides the core stateless block execution functionality,
 //! porting the Go implementation from `stateless.go`.
 
-use alloy_consensus::{Header, Sealable};
+use alloy_consensus::{Header, ReceiptEnvelope, Sealable};
 use alloy_eips::eip2718::Decodable2718;
 use alloy_primitives::{Address, B256, Bytes, address};
 use kona_genesis::{L1ChainConfig, RollupConfig};
-use op_alloy_consensus::{OpReceiptEnvelope, OpTxEnvelope};
+use op_alloy_consensus::OpTxEnvelope;
 
 use super::attributes::extract_deposits_from_receipts;
 use super::evm::execute_block;
@@ -15,7 +15,7 @@ use super::l2_block_ref::l2_block_to_block_info;
 use super::trie_db::EnclaveTrieDB;
 use super::witness::{ExecutionWitness, transform_witness};
 use crate::error::ExecutorError;
-use crate::providers::{L2SystemConfigFetcher, compute_receipt_root, compute_tx_root};
+use crate::providers::{L2SystemConfigFetcher, compute_l1_receipt_root, compute_tx_root};
 use crate::types::account::AccountResult;
 
 /// Maximum sequencer drift in seconds (Fjord hardfork).
@@ -79,7 +79,7 @@ pub fn execute_stateless(
     rollup_config: &RollupConfig,
     l1_config: &L1ChainConfig,
     l1_origin: &Header,
-    l1_receipts: &[OpReceiptEnvelope],
+    l1_receipts: &[ReceiptEnvelope],
     previous_block_txs: &[Bytes],
     block_header: &Header,
     sequenced_txs: &[Bytes],
@@ -87,7 +87,7 @@ pub fn execute_stateless(
     message_account: &AccountResult,
 ) -> Result<ExecutionResult, ExecutorError> {
     // 1. Verify L1 receipts hash (stateless.go:34-37)
-    let computed_receipt_root = compute_receipt_root(l1_receipts);
+    let computed_receipt_root = compute_l1_receipt_root(l1_receipts);
     if computed_receipt_root != l1_origin.receipts_root {
         return Err(ExecutorError::InvalidReceipts);
     }
@@ -165,19 +165,26 @@ pub fn execute_stateless(
 
     // 7-8. Build all transactions and execute via EVM
     // Get system config from L2 fetcher using previous block
-    let first_prev_tx_data = previous_block_txs.first().cloned();
+    // Extract the calldata from the first deposit transaction
+    let first_prev_tx_calldata = previous_block_txs.first().and_then(|tx_bytes| {
+        let tx = OpTxEnvelope::decode_2718(&mut tx_bytes.as_ref()).ok()?;
+        match &tx {
+            OpTxEnvelope::Deposit(d) => Some(d.input.clone()),
+            _ => None,
+        }
+    });
     let l2_fetcher = L2SystemConfigFetcher::new(
         rollup_config.clone(),
         previous_block_hash,
         previous_header.clone(),
-        first_prev_tx_data,
+        first_prev_tx_calldata,
     );
     let system_config = l2_fetcher.system_config_by_l2_hash(previous_block_hash)?;
 
     // Extract deposit transactions from L1 receipts
     // If include_deposits is false (same L1 origin), pass empty receipts to skip user deposits
     // but still generate the L1 info deposit tx
-    let receipts_for_deposits: &[OpReceiptEnvelope] = if include_deposits {
+    let receipts_for_deposits: &[ReceiptEnvelope] = if include_deposits {
         l1_receipts
     } else {
         &[]
@@ -288,38 +295,6 @@ pub const fn validate_sequencer_drift(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::b256;
-
-    #[allow(dead_code)]
-    fn test_header(number: u64, timestamp: u64) -> Header {
-        Header {
-            parent_hash: b256!("0000000000000000000000000000000000000000000000000000000000000001"),
-            ommers_hash: b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"),
-            beneficiary: Default::default(),
-            state_root: b256!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
-            transactions_root: b256!(
-                "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
-            ),
-            receipts_root: b256!(
-                "56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421"
-            ),
-            logs_bloom: Default::default(),
-            difficulty: Default::default(),
-            number,
-            gas_limit: 30_000_000,
-            gas_used: 0,
-            timestamp,
-            extra_data: Default::default(),
-            mix_hash: Default::default(),
-            nonce: Default::default(),
-            base_fee_per_gas: Some(1_000_000_000),
-            withdrawals_root: None,
-            blob_gas_used: None,
-            excess_blob_gas: None,
-            parent_beacon_block_root: None,
-            requests_hash: None,
-        }
-    }
 
     #[test]
     fn test_validate_sequencer_drift_no_txs() {

@@ -3,13 +3,12 @@
 //! This module provides functionality to build payload attributes by extracting
 //! deposit transactions from L1 receipts.
 
-use alloy_consensus::Header;
+use alloy_consensus::{Header, ReceiptEnvelope};
 use alloy_eips::eip2718::Encodable2718;
 use alloy_primitives::{Address, B256, Bytes, Log, address};
 use hex_literal::hex;
 use kona_genesis::{L1ChainConfig, RollupConfig, SystemConfig};
 use kona_protocol::{L1BlockInfoTx, decode_deposit};
-use op_alloy_consensus::OpReceiptEnvelope;
 
 use crate::error::ExecutorError;
 
@@ -49,7 +48,7 @@ pub fn extract_deposits_from_receipts(
     system_config: &SystemConfig,
     l1_origin: &Header,
     l1_origin_hash: B256,
-    receipts: &[OpReceiptEnvelope],
+    receipts: &[ReceiptEnvelope],
     l2_block_number: u64,
     l2_timestamp: u64,
     sequence_number: u64,
@@ -96,13 +95,13 @@ pub fn extract_deposits_from_receipts(
 }
 
 /// Get logs from a receipt envelope.
-fn get_receipt_logs(receipt: &OpReceiptEnvelope) -> &[Log] {
+fn get_receipt_logs(receipt: &ReceiptEnvelope) -> &[Log] {
     match receipt {
-        OpReceiptEnvelope::Legacy(r) => &r.receipt.logs,
-        OpReceiptEnvelope::Eip2930(r) => &r.receipt.logs,
-        OpReceiptEnvelope::Eip1559(r) => &r.receipt.logs,
-        OpReceiptEnvelope::Eip7702(r) => &r.receipt.logs,
-        OpReceiptEnvelope::Deposit(r) => &r.receipt.inner.logs,
+        ReceiptEnvelope::Legacy(r) => &r.receipt.logs,
+        ReceiptEnvelope::Eip2930(r) => &r.receipt.logs,
+        ReceiptEnvelope::Eip1559(r) => &r.receipt.logs,
+        ReceiptEnvelope::Eip4844(r) => &r.receipt.logs,
+        ReceiptEnvelope::Eip7702(r) => &r.receipt.logs,
     }
 }
 

@@ -23,10 +23,12 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use alloy_consensus::Header;
-use alloy_primitives::{Address, B256, Bytes};
+use alloy_consensus::{Header, ReceiptEnvelope};
+use alloy_eips::eip2718::Decodable2718;
+use alloy_primitives::{Address, B256, Bytes, keccak256};
 use clap::Parser;
-use op_alloy_consensus::OpReceiptEnvelope;
+use kona_protocol::L1BlockInfoTx;
+use op_alloy_consensus::OpTxEnvelope;
 use serde::{Deserialize, Serialize};
 
 use op_enclave_core::executor::ExecutionWitness;
@@ -73,7 +75,7 @@ pub struct StatelessTestFixture {
     pub l1_origin: Header,
 
     /// The L1 origin block receipts.
-    pub l1_receipts: Vec<OpReceiptEnvelope>,
+    pub l1_receipts: Vec<ReceiptEnvelope>,
 
     /// Transactions from the previous L2 block (RLP-encoded).
     pub previous_block_txs: Vec<Bytes>,
@@ -115,9 +117,36 @@ struct RpcError {
     message: String,
 }
 
-/// L2 block response from RPC.
+/// L2 block response from RPC (with tx hashes).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct L2BlockHashesResponse {
+    hash: B256,
+    parent_hash: B256,
+    number: String,
+    timestamp: String,
+    state_root: B256,
+    receipts_root: B256,
+    transactions_root: B256,
+    gas_limit: String,
+    gas_used: String,
+    #[serde(default)]
+    base_fee_per_gas: Option<String>,
+    transactions: Vec<B256>,
+    miner: Address,
+    logs_bloom: alloy_primitives::Bloom,
+    extra_data: Bytes,
+    mix_hash: B256,
+    #[allow(dead_code)]
+    nonce: String,
+    #[serde(default)]
+    parent_beacon_block_root: Option<B256>,
+    #[serde(default)]
+    withdrawals_root: Option<B256>,
+}
+
+/// L2 block with raw transaction bytes.
+#[derive(Debug)]
 struct L2BlockResponse {
     hash: B256,
     parent_hash: B256,
@@ -126,16 +155,24 @@ struct L2BlockResponse {
     state_root: B256,
     receipts_root: B256,
     transactions_root: B256,
+    gas_limit: u64,
+    gas_used: u64,
+    base_fee_per_gas: Option<u64>,
     transactions: Vec<Bytes>,
+    beneficiary: Address,
+    logs_bloom: alloy_primitives::Bloom,
+    extra_data: Bytes,
+    mix_hash: B256,
+    parent_beacon_block_root: Option<B256>,
+    withdrawals_root: Option<B256>,
 }
 
 /// Execution witness response from debug_executionWitness RPC.
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
 struct ExecutionWitnessResponse {
     headers: Vec<Header>,
-    codes: HashMap<String, String>,
-    state: HashMap<String, String>,
+    codes: Vec<String>,
+    state: Vec<String>,
 }
 
 #[tokio::main]
@@ -193,11 +230,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &client,
         &args.l2_rpc,
         message_passer_address,
-        block_response.state_root,
         block,
     ).await?;
 
-    // 7. Build the fixture
+    // 7. Convert codes array to HashMap (code_hash -> bytecode)
+    let codes_map: HashMap<String, String> = witness
+        .codes
+        .into_iter()
+        .map(|code_hex| {
+            // Decode the bytecode to compute its hash
+            let code_bytes = hex::decode(code_hex.trim_start_matches("0x")).unwrap_or_default();
+            let code_hash = keccak256(&code_bytes);
+            (format!("{code_hash:?}"), format!("0x{}", hex::encode(&code_bytes)))
+        })
+        .collect();
+
+    // Convert state array to HashMap (node_hash -> node)
+    let state_map: HashMap<String, String> = witness
+        .state
+        .into_iter()
+        .map(|node_hex| {
+            // Decode the node to compute its hash
+            let node_bytes = hex::decode(node_hex.trim_start_matches("0x")).unwrap_or_default();
+            let node_hash = keccak256(&node_bytes);
+            (format!("{node_hash:?}"), format!("0x{}", hex::encode(&node_bytes)))
+        })
+        .collect();
+
+    // 8. Build the fixture
     let fixture = StatelessTestFixture {
         rollup_config: get_base_sepolia_rollup_config(),
         l1_config: get_sepolia_l1_config(),
@@ -208,8 +268,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         sequenced_txs: extract_sequenced_txs(&block_response),
         witness: ExecutionWitness {
             headers: witness.headers,
-            codes: witness.codes,
-            state: witness.state,
+            codes: codes_map,
+            state: state_map,
         },
         message_account,
         expected_state_root: block_response.state_root,
@@ -234,23 +294,85 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Fetch an L2 block by number.
+/// Fetch an L2 block by number with raw transaction bytes.
 async fn fetch_l2_block(
     client: &reqwest::Client,
     rpc_url: &str,
     block_number: u64,
 ) -> Result<L2BlockResponse, Box<dyn std::error::Error>> {
+    // First fetch block with transaction hashes
     let response = client
         .post(rpc_url)
         .json(&serde_json::json!({
             "jsonrpc": "2.0",
             "method": "eth_getBlockByNumber",
-            "params": [format!("0x{block_number:x}"), true],
+            "params": [format!("0x{block_number:x}"), false],
             "id": 1
         }))
         .send()
         .await?
-        .json::<RpcResponse<L2BlockResponse>>()
+        .json::<RpcResponse<L2BlockHashesResponse>>()
+        .await?;
+
+    if let Some(error) = response.error {
+        return Err(format!("RPC error {}: {}", error.code, error.message).into());
+    }
+
+    let block = response.result.ok_or("Block not found")?;
+
+    // Fetch raw transactions
+    let mut raw_txs = Vec::with_capacity(block.transactions.len());
+    for tx_hash in &block.transactions {
+        let raw_tx = fetch_raw_transaction(client, rpc_url, *tx_hash).await?;
+        raw_txs.push(raw_tx);
+    }
+
+    // Parse hex values
+    let gas_limit = u64::from_str_radix(block.gas_limit.trim_start_matches("0x"), 16)?;
+    let gas_used = u64::from_str_radix(block.gas_used.trim_start_matches("0x"), 16)?;
+    let base_fee = block.base_fee_per_gas
+        .as_ref()
+        .map(|s| u64::from_str_radix(s.trim_start_matches("0x"), 16))
+        .transpose()?;
+
+    Ok(L2BlockResponse {
+        hash: block.hash,
+        parent_hash: block.parent_hash,
+        number: block.number,
+        timestamp: block.timestamp,
+        state_root: block.state_root,
+        receipts_root: block.receipts_root,
+        transactions_root: block.transactions_root,
+        gas_limit,
+        gas_used,
+        base_fee_per_gas: base_fee,
+        transactions: raw_txs,
+        beneficiary: block.miner,
+        logs_bloom: block.logs_bloom,
+        extra_data: block.extra_data,
+        mix_hash: block.mix_hash,
+        parent_beacon_block_root: block.parent_beacon_block_root,
+        withdrawals_root: block.withdrawals_root,
+    })
+}
+
+/// Fetch raw transaction by hash.
+async fn fetch_raw_transaction(
+    client: &reqwest::Client,
+    rpc_url: &str,
+    tx_hash: B256,
+) -> Result<Bytes, Box<dyn std::error::Error>> {
+    let response = client
+        .post(rpc_url)
+        .json(&serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "eth_getRawTransactionByHash",
+            "params": [format!("{tx_hash:?}")],
+            "id": 1
+        }))
+        .send()
+        .await?
+        .json::<RpcResponse<Bytes>>()
         .await?;
 
     if let Some(error) = response.error {
@@ -259,7 +381,7 @@ async fn fetch_l2_block(
 
     response
         .result
-        .ok_or_else(|| "Block not found".into())
+        .ok_or_else(|| format!("Raw transaction not found: {tx_hash:?}").into())
 }
 
 /// Fetch execution witness using debug_executionWitness RPC.
@@ -326,7 +448,7 @@ async fn fetch_l1_receipts(
     client: &reqwest::Client,
     rpc_url: &str,
     block_hash: B256,
-) -> Result<Vec<OpReceiptEnvelope>, Box<dyn std::error::Error>> {
+) -> Result<Vec<ReceiptEnvelope>, Box<dyn std::error::Error>> {
     let response = client
         .post(rpc_url)
         .json(&serde_json::json!({
@@ -337,7 +459,7 @@ async fn fetch_l1_receipts(
         }))
         .send()
         .await?
-        .json::<RpcResponse<Vec<OpReceiptEnvelope>>>()
+        .json::<RpcResponse<Vec<ReceiptEnvelope>>>()
         .await?;
 
     if let Some(error) = response.error {
@@ -352,7 +474,6 @@ async fn fetch_account_proof(
     client: &reqwest::Client,
     rpc_url: &str,
     address: Address,
-    _state_root: B256,
     block_number: u64,
 ) -> Result<AccountResult, Box<dyn std::error::Error>> {
     let response = client
@@ -385,36 +506,21 @@ async fn fetch_account_proof(
 fn extract_l1_origin_hash(
     block: &L2BlockResponse,
 ) -> Result<B256, Box<dyn std::error::Error>> {
-    // The first transaction in every L2 block is the L1 info deposit
-    let first_tx = block
-        .transactions
-        .first()
+    let first_tx = block.transactions.first()
         .ok_or("Block has no transactions")?;
 
-    // The L1 block hash is embedded in the L1 info deposit tx data
-    // For now, return a placeholder - in a real implementation, decode the deposit tx
-    // and extract the L1 block hash from the L1BlockInfoTx data
+    let tx = OpTxEnvelope::decode_2718(&mut first_tx.as_ref())
+        .map_err(|e| format!("Failed to decode deposit tx: {e}"))?;
 
-    // This is a simplified extraction - the actual implementation would:
-    // 1. Decode the deposit transaction
-    // 2. Parse the L1BlockInfoTx from the calldata
-    // 3. Extract the L1 block hash
+    let deposit = match &tx {
+        OpTxEnvelope::Deposit(d) => d,
+        _ => return Err("First tx is not a deposit".into())
+    };
 
-    // For Ecotone format (post-Ecotone hardfork):
-    // - Method selector: 0x440a5e20
-    // - L1 block hash is at bytes 36-68 (after 4 byte selector + 32 byte offset)
+    let l1_info = L1BlockInfoTx::decode_calldata(deposit.input.as_ref())
+        .map_err(|e| format!("Failed to decode L1BlockInfoTx: {e}"))?;
 
-    let tx_data = first_tx.as_ref();
-    if tx_data.len() < 69 {
-        return Err("L1 info deposit tx too short".into());
-    }
-
-    // Skip deposit tx prefix (0x7E) and RLP decode to get calldata
-    // For simplicity, assume the L1 block hash location (this is approximate)
-    // A proper implementation would fully decode the deposit tx
-
-    // Placeholder: Return error indicating manual extraction needed
-    Err("L1 origin extraction requires proper deposit tx decoding - please provide L1 origin hash manually or enhance this function".into())
+    Ok(l1_info.id().hash)
 }
 
 /// Extract sequenced transactions (all txs except the first deposit).
@@ -440,41 +546,102 @@ fn block_response_to_header(
     let number = u64::from_str_radix(block.number.trim_start_matches("0x"), 16)?;
     let timestamp = u64::from_str_radix(block.timestamp.trim_start_matches("0x"), 16)?;
 
-    // Build header from response
-    // Note: This is a simplified conversion - full implementation would parse all fields
     Ok(Header {
         parent_hash: block.parent_hash,
-        ommers_hash: B256::ZERO,
-        beneficiary: Address::ZERO,
+        ommers_hash: alloy_primitives::b256!("1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347"),
+        beneficiary: block.beneficiary,
         state_root: block.state_root,
         transactions_root: block.transactions_root,
         receipts_root: block.receipts_root,
-        logs_bloom: Default::default(),
+        logs_bloom: block.logs_bloom,
         difficulty: Default::default(),
         number,
-        gas_limit: 30_000_000, // Default, should parse from response
-        gas_used: 0, // Should parse from response
+        gas_limit: block.gas_limit,
+        gas_used: block.gas_used,
         timestamp,
-        extra_data: Default::default(),
-        mix_hash: B256::ZERO,
+        extra_data: block.extra_data.clone(),
+        mix_hash: block.mix_hash,
         nonce: Default::default(),
-        base_fee_per_gas: Some(1_000_000_000), // Should parse from response
-        withdrawals_root: None,
+        base_fee_per_gas: block.base_fee_per_gas,
+        withdrawals_root: block.withdrawals_root,
         blob_gas_used: None,
         excess_blob_gas: None,
-        parent_beacon_block_root: None,
+        parent_beacon_block_root: block.parent_beacon_block_root,
         requests_hash: None,
     })
 }
 
 /// Get Base Sepolia rollup configuration.
 fn get_base_sepolia_rollup_config() -> kona_genesis::RollupConfig {
-    // Base Sepolia configuration
-    // These values should match the actual Base Sepolia rollup config
-    kona_genesis::RollupConfig::default()
+    use alloy_eips::eip1898::BlockNumHash;
+    use alloy_primitives::b256;
+    use kona_genesis::{BaseFeeConfig, ChainGenesis, HardForkConfig, SystemConfig};
+
+    kona_genesis::RollupConfig {
+        l1_chain_id: 11155111, // Sepolia
+        l2_chain_id: alloy_chains::Chain::from_id(84532), // Base Sepolia
+
+        genesis: ChainGenesis {
+            l1: BlockNumHash {
+                number: 4370868,
+                hash: b256!("cac9a83291d4dec146d6f7f69ab2304f23f5be87b1789119a0c5b1e4482444ed"),
+            },
+            l2: BlockNumHash {
+                number: 0,
+                hash: b256!("0dcc9e089e30b90ddfc55be9a37dd15bc551aeee999d2e2b51414c54eaf934e4"),
+            },
+            l2_time: 1695768288,
+            system_config: Some(SystemConfig {
+                batcher_address: "0x6CDEbe940BC0F26850285cacA097C11c33103E47".parse().unwrap(),
+                gas_limit: 25_000_000,
+                ..SystemConfig::default()
+            }),
+        },
+
+        block_time: 2,
+        max_sequencer_drift: 600,
+        seq_window_size: 3600,
+        channel_timeout: 300,
+        granite_channel_timeout: 50,
+
+        // Base Sepolia contract addresses
+        deposit_contract_address: "0x49f53e41452C74589E85cA1677426Ba426459e85".parse().unwrap(),
+        l1_system_config_address: "0xf272670eb55e895584501d564AfEB048bEd26194".parse().unwrap(),
+        batch_inbox_address: "0xfF00000000000000000000000000000000084532".parse().unwrap(),
+        protocol_versions_address: Address::ZERO,
+        da_challenge_address: None,
+        superchain_config_address: None,
+
+        blobs_enabled_l1_timestamp: Some(0),
+
+        // Base Sepolia hardfork timestamps
+        hardforks: HardForkConfig {
+            regolith_time: Some(0),
+            canyon_time: Some(1699981200),
+            delta_time: Some(1703203200),
+            ecotone_time: Some(1708534800),
+            fjord_time: Some(1716998400),
+            granite_time: Some(1723478400),
+            holocene_time: Some(1732633200),
+            pectra_blob_schedule_time: Some(1742486400),
+            isthmus_time: Some(1744905600),
+            jovian_time: Some(1763568001),
+            interop_time: None,
+        },
+
+        interop_message_expiry_window: 0,
+        alt_da_config: None,
+        chain_op_config: BaseFeeConfig {
+            eip1559_elasticity: 10,
+            eip1559_denominator: 50,
+            eip1559_denominator_canyon: 250,
+        },
+    }
 }
 
 /// Get Sepolia L1 chain configuration.
 fn get_sepolia_l1_config() -> L1ChainConfig {
+    // Use default L1 chain config - the specific chain doesn't matter
+    // for deposit extraction, only the hardfork timestamps matter
     L1ChainConfig::default()
 }

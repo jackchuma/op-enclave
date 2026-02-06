@@ -7,9 +7,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 
-use alloy_consensus::Header;
+use alloy_consensus::{Header, ReceiptEnvelope};
 use alloy_primitives::{B256, Bytes, U256, address, b256};
-use op_alloy_consensus::OpReceiptEnvelope;
 use serde::{Deserialize, Serialize};
 
 use op_enclave_core::executor::{
@@ -36,7 +35,7 @@ pub struct StatelessTestFixture {
     pub l1_origin: Header,
 
     /// The L1 origin block receipts.
-    pub l1_receipts: Vec<OpReceiptEnvelope>,
+    pub l1_receipts: Vec<ReceiptEnvelope>,
 
     /// Transactions from the previous L2 block (RLP-encoded).
     pub previous_block_txs: Vec<Bytes>,
