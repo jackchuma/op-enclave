@@ -12,11 +12,18 @@ alloy-consensus.workspace = true
 alloy-rlp.workspace = true
 alloy-trie.workspace = true
 kona-genesis.workspace = true
+kona-derive.workspace = true
+kona-executor.workspace = true
+kona-mpt.workspace = true
+kona-driver.workspace = true
 op-alloy-consensus.workspace = true
 kona-protocol.workspace = true
+revm.workspace = true
+op-revm.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
+hex-literal.workspace = true
 thiserror.workspace = true
 
 [lints]

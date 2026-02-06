@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod error;
+pub mod executor;
 pub mod providers;
 pub mod serde_utils;
 pub mod types;
@@ -13,10 +14,18 @@ pub use types::account::AccountResult;
 pub use types::config::{
     BlockId, Genesis, GenesisSystemConfig, MARSHAL_BINARY_SIZE, PerChainConfig, RollupConfig,
 };
+pub use types::output::output_root_v0;
 pub use types::proposal::Proposal;
 
 // Re-export error types
-pub use error::{ConfigError, CryptoError, EnclaveError, ProviderError, Result};
+pub use error::{ConfigError, CryptoError, EnclaveError, ExecutorError, ProviderError, Result};
+
+// Re-export executor types
+pub use executor::{
+    EnclaveTrieDB, ExecutionResult, ExecutionWitness, L2_TO_L1_MESSAGE_PASSER,
+    MAX_SEQUENCER_DRIFT_FJORD, PayloadAttributes, TransformedWitness, execute_stateless,
+    prepare_payload_attributes, transform_witness, validate_not_deposit, validate_sequencer_drift,
+};
 
 // Re-export commonly used types from alloy
 pub use alloy_consensus::Header;
