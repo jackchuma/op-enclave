@@ -32,6 +32,3 @@ pub use providers::{
     BlockInfoWrapper, L1ReceiptsFetcher, L2SystemConfigFetcher, compute_receipt_root,
     compute_tx_root,
 };
-
-// Re-export operator fee encoding
-pub use types::operator_fee::encode_operator_fee_params;

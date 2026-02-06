@@ -120,20 +120,20 @@ impl L2SystemConfigFetcher {
         };
 
         // Add Isthmus operator fee params
-        if is_isthmus_but_not_first_block(&self.config, l2_time) {
-            if let L1BlockInfoTx::Isthmus(info) = &l1_info {
-                sys_cfg.operator_fee_scalar = Some(info.operator_fee_scalar);
-                sys_cfg.operator_fee_constant = Some(info.operator_fee_constant);
-            }
+        if is_isthmus_but_not_first_block(&self.config, l2_time)
+            && let L1BlockInfoTx::Isthmus(info) = &l1_info
+        {
+            sys_cfg.operator_fee_scalar = Some(info.operator_fee_scalar);
+            sys_cfg.operator_fee_constant = Some(info.operator_fee_constant);
         }
 
         // Add Jovian operator fee params including da_footprint_gas_scalar
-        if is_jovian_but_not_first_block(&self.config, l2_time) {
-            if let L1BlockInfoTx::Jovian(info) = &l1_info {
-                sys_cfg.operator_fee_scalar = Some(info.operator_fee_scalar());
-                sys_cfg.operator_fee_constant = Some(info.operator_fee_constant());
-                sys_cfg.da_footprint_gas_scalar = Some(info.da_footprint_gas_scalar());
-            }
+        if is_jovian_but_not_first_block(&self.config, l2_time)
+            && let L1BlockInfoTx::Jovian(info) = &l1_info
+        {
+            sys_cfg.operator_fee_scalar = Some(info.operator_fee_scalar());
+            sys_cfg.operator_fee_constant = Some(info.operator_fee_constant());
+            sys_cfg.da_footprint_gas_scalar = Some(info.da_footprint_gas_scalar());
         }
 
         Ok(sys_cfg)
@@ -162,20 +162,18 @@ impl L2SystemConfigFetcher {
 
             // Per OP Stack spec, base_fee_scalar and blob_base_fee_scalar are always u32 values.
             // The U256 return type is for API compatibility.
-            let blob_scalar: u32 = l1_info
-                .blob_base_fee_scalar()
-                .try_into()
-                .map_err(|_| ProviderError::FeeScalarOverflow {
+            let blob_scalar: u32 = l1_info.blob_base_fee_scalar().try_into().map_err(|_| {
+                ProviderError::FeeScalarOverflow {
                     field: "blob_base_fee_scalar",
                     value: l1_info.blob_base_fee_scalar(),
-                })?;
-            let base_scalar: u32 = l1_info
-                .l1_fee_scalar()
-                .try_into()
-                .map_err(|_| ProviderError::FeeScalarOverflow {
+                }
+            })?;
+            let base_scalar: u32 = l1_info.l1_fee_scalar().try_into().map_err(|_| {
+                ProviderError::FeeScalarOverflow {
                     field: "base_fee_scalar",
                     value: l1_info.l1_fee_scalar(),
-                })?;
+                }
+            })?;
 
             encoded[24..28].copy_from_slice(&blob_scalar.to_be_bytes());
             encoded[28..32].copy_from_slice(&base_scalar.to_be_bytes());
@@ -235,9 +233,9 @@ const fn is_fork_active_but_not_activation(fork_time: Option<u64>, l2_time: u64)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::{address, b256, hex};
     use crate::config::default_rollup_config;
     use crate::providers::test_utils::test_header;
+    use alloy_primitives::{address, b256, hex};
 
     // Test vectors from kona-protocol crate - these are real L1BlockInfo calldata bytes
     // from mainnet/testnet blocks.
@@ -261,7 +259,10 @@ mod tests {
             .expect("valid bedrock calldata");
 
         // Expected values from the raw hex above
-        assert_eq!(l1_info.batcher_address(), address!("6887246668a3b87f54deb3b94ba47a6f63f32985"));
+        assert_eq!(
+            l1_info.batcher_address(),
+            address!("6887246668a3b87f54deb3b94ba47a6f63f32985")
+        );
         assert_eq!(l1_info.sequence_number(), 4);
         assert_eq!(l1_info.l1_fee_overhead(), U256::from(0xbc));
         assert_eq!(l1_info.l1_fee_scalar(), U256::from(0xa6fe0));
@@ -271,7 +272,8 @@ mod tests {
         assert_eq!(l1_info.blob_base_fee_scalar(), U256::ZERO);
 
         // Verify block hash
-        let expected_hash = b256!("392012032675be9f94aae5ab442de73c5f4fb1bf30fa7dd0d2442239899a40fc");
+        let expected_hash =
+            b256!("392012032675be9f94aae5ab442de73c5f4fb1bf30fa7dd0d2442239899a40fc");
         assert_eq!(l1_info.block_hash(), expected_hash);
     }
 
@@ -282,7 +284,10 @@ mod tests {
             .expect("valid ecotone calldata");
 
         // Expected values from the raw hex above
-        assert_eq!(l1_info.batcher_address(), address!("6887246668a3b87f54deb3b94ba47a6f63f32985"));
+        assert_eq!(
+            l1_info.batcher_address(),
+            address!("6887246668a3b87f54deb3b94ba47a6f63f32985")
+        );
         assert_eq!(l1_info.sequence_number(), 5);
 
         // Ecotone-specific scalar fields (packed as u32)
@@ -295,7 +300,8 @@ mod tests {
         assert_eq!(l1_info.blob_base_fee(), U256::from(1));
 
         // Verify block hash
-        let expected_hash = b256!("1c4c84c50740386c7dc081efddd644405f04cde73e30a2e381737acce9f5add3");
+        let expected_hash =
+            b256!("1c4c84c50740386c7dc081efddd644405f04cde73e30a2e381737acce9f5add3");
         assert_eq!(l1_info.block_hash(), expected_hash);
     }
 
@@ -321,11 +327,15 @@ mod tests {
             Some(Bytes::from_static(&ECOTONE_CALLDATA)),
         );
 
-        let sys_cfg = fetcher.system_config_by_l2_hash(block_hash)
+        let sys_cfg = fetcher
+            .system_config_by_l2_hash(block_hash)
             .expect("should extract system config");
 
         // Verify batcher address extracted correctly
-        assert_eq!(sys_cfg.batcher_address, address!("6887246668a3b87f54deb3b94ba47a6f63f32985"));
+        assert_eq!(
+            sys_cfg.batcher_address,
+            address!("6887246668a3b87f54deb3b94ba47a6f63f32985")
+        );
 
         // Verify the scalar is encoded in v1 format:
         // byte 0: version (1)
@@ -336,13 +346,19 @@ mod tests {
 
         // Extract blob_base_fee_scalar from bytes 24-28
         let blob_scalar = u32::from_be_bytes([
-            scalar_bytes[24], scalar_bytes[25], scalar_bytes[26], scalar_bytes[27]
+            scalar_bytes[24],
+            scalar_bytes[25],
+            scalar_bytes[26],
+            scalar_bytes[27],
         ]);
         assert_eq!(blob_scalar, 810949, "blob_base_fee_scalar should match");
 
         // Extract base_fee_scalar from bytes 28-32
         let base_scalar = u32::from_be_bytes([
-            scalar_bytes[28], scalar_bytes[29], scalar_bytes[30], scalar_bytes[31]
+            scalar_bytes[28],
+            scalar_bytes[29],
+            scalar_bytes[30],
+            scalar_bytes[31],
         ]);
         assert_eq!(base_scalar, 1368, "base_fee_scalar should match");
     }
@@ -367,11 +383,15 @@ mod tests {
             Some(Bytes::from_static(&BEDROCK_CALLDATA)),
         );
 
-        let sys_cfg = fetcher.system_config_by_l2_hash(block_hash)
+        let sys_cfg = fetcher
+            .system_config_by_l2_hash(block_hash)
             .expect("should extract system config");
 
         // Verify batcher address extracted correctly
-        assert_eq!(sys_cfg.batcher_address, address!("6887246668a3b87f54deb3b94ba47a6f63f32985"));
+        assert_eq!(
+            sys_cfg.batcher_address,
+            address!("6887246668a3b87f54deb3b94ba47a6f63f32985")
+        );
 
         // For Bedrock, scalar is the raw l1_fee_scalar value (0xa6fe0)
         assert_eq!(sys_cfg.scalar, U256::from(0xa6fe0));

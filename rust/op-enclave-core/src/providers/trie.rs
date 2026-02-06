@@ -135,16 +135,17 @@ mod tests {
     fn test_compute_receipt_root_matches_go_single() {
         // Test vector generated from Go types.DeriveSha()
         // Single EIP-1559 receipt with cumulative gas 21000
-        let receipts = vec![
-            create_test_receipt(2, true, 21000),
-        ];
+        let receipts = vec![create_test_receipt(2, true, 21000)];
 
         let computed = compute_receipt_root(&receipts);
 
         // Expected root from Go: types.DeriveSha(receipts, trie.NewStackTrie(nil))
         let expected = b256!("f78dfb743fbd92ade140711c8bbc542b5e307f0ab7984eff35d751969fe57efa");
 
-        assert_eq!(computed, expected, "Receipt root must match Go DeriveSha for single receipt");
+        assert_eq!(
+            computed, expected,
+            "Receipt root must match Go DeriveSha for single receipt"
+        );
     }
 
     #[test]
@@ -161,7 +162,10 @@ mod tests {
         // Expected root from Go: types.DeriveSha(receipts, trie.NewStackTrie(nil))
         let expected = b256!("75308898d571eafb5cd8cde8278bf5b3d13c5f6ec074926de3bb895b519264e1");
 
-        assert_eq!(computed, expected, "Receipt root must match Go DeriveSha for multiple receipts");
+        assert_eq!(
+            computed, expected,
+            "Receipt root must match Go DeriveSha for multiple receipts"
+        );
     }
 
     #[test]
