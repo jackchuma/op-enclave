@@ -230,12 +230,14 @@ func (s *Server) SetSignerKey(ctx context.Context, encrypted hexutil.Bytes) erro
 }
 
 type Proposal struct {
-	OutputRoot     common.Hash
-	Signature      hexutil.Bytes
-	L1OriginHash   common.Hash
-	L2BlockNumber  *hexutil.Big
-	PrevOutputRoot common.Hash
-	ConfigHash     common.Hash
+	OutputRoot      common.Hash
+	Signature       hexutil.Bytes
+	L1OriginHash    common.Hash
+	L1OriginNumber  uint64
+	L2BlockNumber   *hexutil.Big
+	PrevOutputRoot  common.Hash
+	PrevBlockNumber *hexutil.Big
+	ConfigHash      common.Hash
 }
 
 func (s *Server) ExecuteStateless(
@@ -249,6 +251,8 @@ func (s *Server) ExecuteStateless(
 	witness *stateless.ExecutionWitness,
 	messageAccount *eth.AccountResult,
 	prevMessageAccountHash common.Hash,
+	proposer common.Address,
+	teeImageHash common.Hash,
 ) (*Proposal, error) {
 	codes, err := transformMap(witness.Codes)
 	if err != nil {
@@ -277,31 +281,30 @@ func (s *Server) ExecuteStateless(
 	prevOutputRoot := OutputRootV0(previousBlockHeader, prevMessageAccountHash)
 	outputRoot := OutputRootV0(blockHeader, messageAccount.StorageHash)
 	configHash := config.Hash()
-	l2BlockNumber := common.BytesToHash(blockHeader.Number.Bytes())
+	prevBlockNumber := previousBlockHeader.Number.Uint64()
+	l1OriginNumber := l1Origin.Number.Uint64()
 
-	data := append(configHash[:], l1OriginHash[:]...)
-	data = append(data, l2BlockNumber[:]...)
-	data = append(data, prevOutputRoot[:]...)
-	data = append(data, outputRoot[:]...)
-	sig, err := crypto.Sign(crypto.Keccak256(data), s.signerKey)
+	// Sign the journal in the format expected by AggregateVerifier:
+	// keccak256(abi.encodePacked(proposer, l1OriginHash, l1OriginNumber, startingRoot, startingSeqNum, rootClaim, seqNum, configHash, teeImageHash))
+	journal := computeJournal(proposer, l1OriginHash, l1OriginNumber, prevOutputRoot, prevBlockNumber, outputRoot, blockHeader.Number.Uint64(), configHash, teeImageHash)
+	sig, err := crypto.Sign(journal[:], s.signerKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign: %w", err)
 	}
 
-	if err != nil {
-		return nil, err
-	}
 	return &Proposal{
-		OutputRoot:     outputRoot,
-		Signature:      sig,
-		L1OriginHash:   l1OriginHash,
-		L2BlockNumber:  (*hexutil.Big)(blockHeader.Number),
-		PrevOutputRoot: prevOutputRoot,
-		ConfigHash:     configHash,
+		OutputRoot:      outputRoot,
+		Signature:       sig,
+		L1OriginHash:    l1OriginHash,
+		L1OriginNumber:  l1OriginNumber,
+		L2BlockNumber:   (*hexutil.Big)(blockHeader.Number),
+		PrevOutputRoot:  prevOutputRoot,
+		PrevBlockNumber: (*hexutil.Big)(new(big.Int).SetUint64(prevBlockNumber)),
+		ConfigHash:      configHash,
 	}, nil
 }
 
-func (s *Server) Aggregate(ctx context.Context, configHash common.Hash, prevOutputRoot common.Hash, proposals []*Proposal) (*Proposal, error) {
+func (s *Server) Aggregate(ctx context.Context, configHash common.Hash, prevOutputRoot common.Hash, prevBlockNumber uint64, proposals []*Proposal, proposer common.Address, teeImageHash common.Hash) (*Proposal, error) {
 	if len(proposals) == 0 {
 		return nil, errors.New("no proposals")
 	}
@@ -309,39 +312,73 @@ func (s *Server) Aggregate(ctx context.Context, configHash common.Hash, prevOutp
 		return proposals[0], nil
 	}
 
-	outputRoot := prevOutputRoot
+	startingBlockNumber := prevBlockNumber
 	var l1OriginHash common.Hash
-	var l2BlockNumber common.Hash
+	var l1OriginNumber uint64
+	var l2BlockNumber uint64
+	var lastOutputRoot common.Hash
 	for _, p := range proposals {
 		l1OriginHash = p.L1OriginHash
-		l2BlockNumber = common.BytesToHash(p.L2BlockNumber.ToInt().Bytes())
-		data := append(configHash[:], l1OriginHash[:]...)
-		data = append(data, l2BlockNumber[:]...)
-		data = append(data, outputRoot[:]...)
-		data = append(data, p.OutputRoot[:]...)
-		if !crypto.VerifySignature(crypto.FromECDSAPub(&s.signerKey.PublicKey), crypto.Keccak256(data), p.Signature[:64]) {
+		l1OriginNumber = p.L1OriginNumber
+		l2BlockNumber = p.L2BlockNumber.ToInt().Uint64()
+		pPrevBlockNumber := p.PrevBlockNumber.ToInt().Uint64()
+
+		// Verify the signature using the journal format
+		// Use p.PrevOutputRoot since that's what was signed in ExecuteStateless
+		journal := computeJournal(proposer, l1OriginHash, l1OriginNumber, p.PrevOutputRoot, pPrevBlockNumber, p.OutputRoot, l2BlockNumber, configHash, teeImageHash)
+		if !crypto.VerifySignature(crypto.FromECDSAPub(&s.signerKey.PublicKey), journal[:], p.Signature[:64]) {
 			return nil, errors.New("invalid signature")
 		}
-		outputRoot = p.OutputRoot
+		lastOutputRoot = p.OutputRoot
 	}
 
-	data := append(configHash[:], l1OriginHash[:]...)
-	data = append(data, l2BlockNumber[:]...)
-	data = append(data, prevOutputRoot[:]...)
-	data = append(data, outputRoot[:]...)
-	sig, err := crypto.Sign(crypto.Keccak256(data), s.signerKey)
+	// Sign the aggregated journal
+	journal := computeJournal(proposer, l1OriginHash, l1OriginNumber, prevOutputRoot, startingBlockNumber, lastOutputRoot, l2BlockNumber, configHash, teeImageHash)
+	sig, err := crypto.Sign(journal[:], s.signerKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign: %w", err)
 	}
 
 	return &Proposal{
-		OutputRoot:     outputRoot,
-		Signature:      sig,
-		L1OriginHash:   l1OriginHash,
-		L2BlockNumber:  (*hexutil.Big)(new(big.Int).SetBytes(l2BlockNumber[:])),
-		PrevOutputRoot: prevOutputRoot,
-		ConfigHash:     configHash,
+		OutputRoot:      lastOutputRoot,
+		Signature:       sig,
+		L1OriginHash:    l1OriginHash,
+		L1OriginNumber:  l1OriginNumber,
+		L2BlockNumber:   (*hexutil.Big)(new(big.Int).SetUint64(l2BlockNumber)),
+		PrevOutputRoot:  prevOutputRoot,
+		PrevBlockNumber: (*hexutil.Big)(new(big.Int).SetUint64(startingBlockNumber)),
+		ConfigHash:      configHash,
 	}, nil
+}
+
+// computeJournal computes the journal hash in the format expected by AggregateVerifier.
+// This matches: keccak256(abi.encodePacked(proposer, l1OriginHash, l1OriginNumber, startingRoot, startingSeqNum, rootClaim, seqNum, configHash, teeImageHash))
+func computeJournal(proposer common.Address, l1OriginHash common.Hash, l1OriginNumber uint64, startingRoot common.Hash, startingSeqNum uint64, rootClaim common.Hash, seqNum uint64, configHash, teeImageHash common.Hash) common.Hash {
+	// Build the data in the same order as Solidity's abi.encodePacked
+	// proposer: 20 bytes (address)
+	// l1OriginHash: 32 bytes (bytes32)
+	// l1OriginNumber: 32 bytes (uint256)
+	// startingRoot: 32 bytes (bytes32)
+	// startingSeqNum: 32 bytes (uint256)
+	// rootClaim: 32 bytes (bytes32)
+	// seqNum: 32 bytes (uint256)
+	// configHash: 32 bytes (bytes32)
+	// teeImageHash: 32 bytes (bytes32)
+	l1OriginNumberHash := common.BigToHash(new(big.Int).SetUint64(l1OriginNumber))
+	startingSeqNumHash := common.BigToHash(new(big.Int).SetUint64(startingSeqNum))
+	seqNumHash := common.BigToHash(new(big.Int).SetUint64(seqNum))
+
+	data := make([]byte, 0, 20+32*8)
+	data = append(data, proposer[:]...)
+	data = append(data, l1OriginHash[:]...)
+	data = append(data, l1OriginNumberHash[:]...)
+	data = append(data, startingRoot[:]...)
+	data = append(data, startingSeqNumHash[:]...)
+	data = append(data, rootClaim[:]...)
+	data = append(data, seqNumHash[:]...)
+	data = append(data, configHash[:]...)
+	data = append(data, teeImageHash[:]...)
+	return crypto.Keccak256Hash(data)
 }
 
 func OutputRootV0(header *types.Header, storageRoot common.Hash) common.Hash {
