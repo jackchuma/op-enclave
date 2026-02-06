@@ -1,0 +1,85 @@
+name: Rust EIF Build
+
+on:
+  push:
+    branches:
+      - 'main'
+    tags:
+      - 'v*'
+    paths:
+      - 'rust/**'
+      - '.github/workflows/docker-rust.yml'
+  pull_request:
+    paths:
+      - 'rust/**'
+      - '.github/workflows/docker-rust.yml'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-rust
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log into the Container registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for the Docker image
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Build and push the Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: rust
+          file: rust/Dockerfile.enclave
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Extract EIF from image
+        if: github.event_name != 'pull_request'
+        run: |
+          docker create --name eif-extract ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+          docker cp eif-extract:/build/eif.bin eif.bin
+          docker cp eif-extract:/build/enclave enclave
+          docker rm eif-extract
+          ls -lh eif.bin enclave
+
+      - name: Upload EIF artifact
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eif-rust
+          path: |
+            eif.bin
+            enclave
+          retention-days: 90
+
+      - name: Verify static linking
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "Checking if binary is statically linked..."
+          if ldd enclave 2>&1 | grep -q "not a dynamic executable\|statically linked"; then
+            echo "SUCCESS: Binary is statically linked"
+          else
+            echo "WARNING: Binary may have dynamic dependencies"
+            ldd enclave || true
+          fi
