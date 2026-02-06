@@ -154,7 +154,7 @@ mod tests {
     #[test]
     fn test_block_info_wrapper_accessors() {
         let header = test_header(12345, 1_700_000_000);
-        let wrapper = BlockInfoWrapper::from_header(header.clone());
+        let wrapper = BlockInfoWrapper::from_header(header);
 
         assert_eq!(wrapper.parent_hash(), B256::repeat_byte(0x01));
         assert_eq!(wrapper.coinbase(), Address::repeat_byte(0x02));
