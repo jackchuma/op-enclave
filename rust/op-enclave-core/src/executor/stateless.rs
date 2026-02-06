@@ -3,17 +3,19 @@
 //! This module provides the core stateless block execution functionality,
 //! porting the Go implementation from `stateless.go`.
 
-use alloy_consensus::Header;
+use alloy_consensus::{Header, Sealable};
 use alloy_eips::eip2718::Decodable2718;
 use alloy_primitives::{Address, B256, Bytes, address};
-use kona_genesis::RollupConfig;
+use kona_genesis::{L1ChainConfig, RollupConfig};
 use op_alloy_consensus::{OpReceiptEnvelope, OpTxEnvelope};
 
+use super::attributes::extract_deposits_from_receipts;
+use super::evm::execute_block;
 use super::l2_block_ref::l2_block_to_block_info;
 use super::trie_db::EnclaveTrieDB;
 use super::witness::{ExecutionWitness, transform_witness};
 use crate::error::ExecutorError;
-use crate::providers::{compute_receipt_root, compute_tx_root};
+use crate::providers::{L2SystemConfigFetcher, compute_receipt_root, compute_tx_root};
 use crate::types::account::AccountResult;
 
 /// Maximum sequencer drift in seconds (Fjord hardfork).
@@ -32,16 +34,14 @@ pub struct ExecutionResult {
 
     /// The computed receipt hash after execution.
     pub receipt_hash: B256,
-
-    /// The TrieDB used during execution.
-    pub trie_db: EnclaveTrieDB,
 }
 
-/// Execute stateless block validation.
+/// Execute stateless block validation with full EVM execution.
 ///
 /// This validates a block without maintaining full state by using a witness
 /// that provides the necessary state data. It performs all validation checks
-/// from the Go implementation in `stateless.go`.
+/// from the Go implementation in `stateless.go` and executes the block via
+/// kona-executor's `StatelessL2Builder`.
 ///
 /// # Validation Checks
 ///
@@ -58,6 +58,7 @@ pub struct ExecutionResult {
 /// # Arguments
 ///
 /// * `rollup_config` - The rollup configuration
+/// * `l1_config` - The L1 chain configuration (for deposit extraction)
 /// * `l1_origin` - The L1 origin block header
 /// * `l1_receipts` - The L1 origin block receipts
 /// * `previous_block_txs` - Transactions from the previous L2 block (RLP-encoded)
@@ -68,14 +69,15 @@ pub struct ExecutionResult {
 ///
 /// # Returns
 ///
-/// The execution result containing computed roots and the trie database.
+/// The execution result containing computed roots.
 ///
 /// # Errors
 ///
-/// Returns an error if any validation check fails.
+/// Returns an error if any validation check fails or EVM execution fails.
 #[allow(clippy::too_many_arguments)]
 pub fn execute_stateless(
     rollup_config: &RollupConfig,
+    l1_config: &L1ChainConfig,
     l1_origin: &Header,
     l1_receipts: &[OpReceiptEnvelope],
     previous_block_txs: &[Bytes],
@@ -94,7 +96,8 @@ pub fn execute_stateless(
     let transformed = transform_witness(witness)?;
 
     // 2. Verify parent hash (stateless.go:39-43)
-    let previous_header = transformed.previous_header();
+    // Clone the header upfront since we'll consume transformed later
+    let previous_header = transformed.previous_header().clone();
     let previous_block_hash = previous_header.hash_slow();
     if block_header.parent_hash != previous_block_hash {
         return Err(ExecutorError::InvalidParentHash);
@@ -123,7 +126,7 @@ pub fn execute_stateless(
 
     let l2_parent = l2_block_to_block_info(
         rollup_config,
-        previous_header,
+        &previous_header,
         previous_block_hash,
         first_prev_tx,
     )?;
@@ -147,9 +150,6 @@ pub fn execute_stateless(
         l2_parent.seq_num + 1 // Same L1 origin, increment sequence
     };
 
-    // Store for potential future use in deposit extraction
-    let _ = (include_deposits, sequence_number);
-
     // 6. Check sequenced transactions don't include deposits (stateless.go:100-104)
     for tx_bytes in sequenced_txs {
         let tx = OpTxEnvelope::decode_2718(&mut tx_bytes.as_ref())
@@ -163,39 +163,100 @@ pub fn execute_stateless(
     // Create the TrieDB from the transformed witness
     let trie_db = EnclaveTrieDB::from_witness(transformed);
 
-    // 7-8. State root and receipt hash verification
-    //
-    // Full EVM execution flow (stateless.go:86-131):
-    // 1. If include_deposits:
-    //    - Get system config via L2SystemConfigFetcher
-    //    - Call extract_deposits_from_receipts() to build:
-    //      a. L1 info deposit tx (first)
-    //      b. User deposits from L1 receipts
-    // 2. Build all_txs = deposits + sequenced_txs
-    // 3. Execute via StatelessL2Builder.build_block(attrs)
-    // 4. Verify computed state_root matches block_header.state_root
-    // 5. Verify computed receipts_root matches block_header.receipts_root
-    //
-    // The EnclaveTrieDB implements TrieProvider and TrieDBProvider traits
-    // required by kona-executor's StatelessL2Builder.
-    //
-    // For now, we trust the provided header values as the actual execution
-    // requires full EVM integration with kona-executor.
-    let expected_state_root = block_header.state_root;
-    let expected_receipt_hash = block_header.receipts_root;
+    // 7-8. Build all transactions and execute via EVM
+    let all_txs = if include_deposits {
+        // Get system config from L2 fetcher using previous block
+        let first_prev_tx_data = previous_block_txs.first().cloned();
+        let l2_fetcher = L2SystemConfigFetcher::new(
+            rollup_config.clone(),
+            previous_block_hash,
+            previous_header.clone(),
+            first_prev_tx_data,
+        );
+        let system_config = l2_fetcher.system_config_by_l2_hash(previous_block_hash)?;
+
+        // Extract deposit transactions from L1 receipts
+        let deposits = extract_deposits_from_receipts(
+            rollup_config,
+            l1_config,
+            &system_config,
+            l1_origin,
+            l1_origin_hash,
+            l1_receipts,
+            block_header.number,
+            block_header.timestamp,
+            sequence_number,
+        )?;
+
+        // Combine deposits + sequenced transactions
+        [deposits, sequenced_txs.to_vec()].concat()
+    } else {
+        // Same L1 origin - only sequenced transactions (no new deposits)
+        // Still need L1 info deposit tx for the block
+        let first_prev_tx_data = previous_block_txs.first().cloned();
+        let l2_fetcher = L2SystemConfigFetcher::new(
+            rollup_config.clone(),
+            previous_block_hash,
+            previous_header.clone(),
+            first_prev_tx_data,
+        );
+        let system_config = l2_fetcher.system_config_by_l2_hash(previous_block_hash)?;
+
+        // Extract L1 info deposit (with no user deposits since same origin)
+        let deposits = extract_deposits_from_receipts(
+            rollup_config,
+            l1_config,
+            &system_config,
+            l1_origin,
+            l1_origin_hash,
+            &[], // No receipts to process for user deposits
+            block_header.number,
+            block_header.timestamp,
+            sequence_number,
+        )?;
+
+        [deposits, sequenced_txs.to_vec()].concat()
+    };
+
+    // Create sealed parent header for builder
+    let parent_sealed = previous_header.seal_slow();
+
+    // Execute block via StatelessL2Builder
+    let execution_result = execute_block(
+        rollup_config,
+        parent_sealed,
+        block_header,
+        &all_txs,
+        trie_db,
+    )?;
+
+    // Verify state root matches
+    if execution_result.state_root != block_header.state_root {
+        return Err(ExecutorError::InvalidStateRoot {
+            expected: block_header.state_root,
+            computed: execution_result.state_root,
+        });
+    }
+
+    // Verify receipts root matches
+    if execution_result.receipts_root != block_header.receipts_root {
+        return Err(ExecutorError::InvalidReceiptHash {
+            expected: block_header.receipts_root,
+            computed: execution_result.receipts_root,
+        });
+    }
 
     // 9. Verify message account (stateless.go:132-137)
     if message_account.address != L2_TO_L1_MESSAGE_PASSER {
         return Err(ExecutorError::InvalidMessageAccountAddress);
     }
     message_account
-        .verify(expected_state_root)
+        .verify(execution_result.state_root)
         .map_err(|e| ExecutorError::MessageAccountVerificationFailed(e.to_string()))?;
 
     Ok(ExecutionResult {
-        state_root: expected_state_root,
-        receipt_hash: expected_receipt_hash,
-        trie_db,
+        state_root: execution_result.state_root,
+        receipt_hash: execution_result.receipts_root,
     })
 }
 

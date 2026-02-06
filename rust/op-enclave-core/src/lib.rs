@@ -35,7 +35,7 @@ pub use op_alloy_consensus::OpReceiptEnvelope;
 
 // Re-export kona_genesis types for ecosystem compatibility
 pub use alloy_eips::eip1898::BlockNumHash;
-pub use kona_genesis::{ChainGenesis, HardForkConfig, SystemConfig};
+pub use kona_genesis::{ChainGenesis, HardForkConfig, L1ChainConfig, SystemConfig};
 
 // Re-export provider types
 pub use providers::{

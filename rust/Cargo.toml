@@ -14,6 +14,8 @@ alloy-primitives = { version = "1.5", features = ["serde"] }
 alloy-consensus = { version = "1.6", features = ["serde"] }
 alloy-rlp = "0.3"
 alloy-trie = "0.9"
+alloy-op-evm = "0.25"
+alloy-rpc-types-engine = "1.6"
 kona-genesis = { git = "https://github.com/ethereum-optimism/optimism", rev = "238012d2d96d5cebbdc390c9199bd63722115a42", default-features = false, features = ["serde"] }
 kona-derive = { git = "https://github.com/ethereum-optimism/optimism", rev = "238012d2d96d5cebbdc390c9199bd63722115a42", default-features = false, features = ["serde"] }
 kona-executor = { git = "https://github.com/ethereum-optimism/optimism", rev = "238012d2d96d5cebbdc390c9199bd63722115a42", default-features = false }

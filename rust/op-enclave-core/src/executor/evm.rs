@@ -4,11 +4,12 @@
 //! for executing L2 blocks in a stateless manner within an enclave.
 
 use alloy_consensus::{Header, Sealed};
-use alloy_eips::eip2718::Decodable2718;
+use alloy_op_evm::OpEvmFactory;
 use alloy_primitives::{Address, B256, Bytes, U256};
+use alloy_rpc_types_engine::PayloadAttributes;
+use kona_executor::StatelessL2Builder;
 use kona_genesis::RollupConfig;
 use kona_mpt::TrieHinter;
-use op_alloy_consensus::OpTxEnvelope;
 use op_alloy_rpc_types_engine::OpPayloadAttributes;
 
 use super::trie_db::EnclaveTrieDB;
@@ -75,75 +76,60 @@ impl TrieHinter for EnclaveTrieHinter {
 /// # Arguments
 ///
 /// * `rollup_config` - The rollup configuration
-/// * `parent_header` - The parent block header (sealed)
-/// * `transactions` - The transactions to execute (EIP-2718 encoded)
-/// * `_trie_db` - The trie database with pre-loaded state
+/// * `parent_header` - The parent block header (sealed, takes ownership)
+/// * `block_header` - The block header being executed (for payload attributes)
+/// * `transactions` - The transactions to execute (EIP-2718 encoded, deposits first)
+/// * `trie_db` - The trie database with pre-loaded state (consumed by builder)
 ///
 /// # Returns
 ///
 /// The execution result containing computed roots.
 ///
-/// # Note
+/// # Errors
 ///
-/// This is a placeholder implementation. Full EVM execution requires:
-/// 1. Building OpPayloadAttributes from the transactions
-/// 2. Executing via StatelessL2Builder
-/// 3. Extracting the final state root from the executed block
-///
-/// The actual integration with `StatelessL2Builder` requires more setup
-/// including proper EVM factory configuration and payload attribute building.
+/// Returns an error if block execution fails.
 pub fn execute_block(
-    _rollup_config: &RollupConfig,
-    _parent_header: &Sealed<Header>,
+    rollup_config: &RollupConfig,
+    parent_header: Sealed<Header>,
+    block_header: &Header,
     transactions: &[Bytes],
-    _trie_db: &EnclaveTrieDB,
+    trie_db: EnclaveTrieDB,
 ) -> Result<BlockExecutionResult, ExecutorError> {
-    // Decode and validate all transactions
-    for (i, tx_bytes) in transactions.iter().enumerate() {
-        let _tx = OpTxEnvelope::decode_2718(&mut tx_bytes.as_ref()).map_err(|e| {
-            ExecutorError::TxDecodeFailed(format!("failed to decode tx {i}: {e}"))
-        })?;
-    }
+    // Build payload attributes from block header
+    let attrs = OpPayloadAttributes {
+        payload_attributes: PayloadAttributes {
+            timestamp: block_header.timestamp,
+            prev_randao: block_header.mix_hash,
+            suggested_fee_recipient: block_header.beneficiary,
+            withdrawals: None,
+            parent_beacon_block_root: block_header.parent_beacon_block_root,
+        },
+        transactions: Some(transactions.to_vec()),
+        no_tx_pool: Some(true),
+        gas_limit: Some(block_header.gas_limit),
+        eip_1559_params: None,
+        min_base_fee: None,
+    };
 
-    // TODO: Full EVM execution integration
-    //
-    // The full implementation would:
-    // 1. Create OpPayloadAttributes from the block parameters
-    // 2. Initialize StatelessL2Builder with the trie_db
-    // 3. Execute the block via builder.build_block(attrs)
-    // 4. Extract state_root and receipts_root from the result
-    //
-    // Example (requires additional setup):
-    // ```
-    // let attrs = OpPayloadAttributes {
-    //     payload_attributes: PayloadAttributes {
-    //         timestamp: block_header.timestamp,
-    //         prev_randao: block_header.mix_hash,
-    //         suggested_fee_recipient: block_header.beneficiary,
-    //         withdrawals: None,
-    //         parent_beacon_block_root: block_header.parent_beacon_block_root,
-    //     },
-    //     transactions: Some(transactions.to_vec()),
-    //     no_tx_pool: Some(true),
-    //     gas_limit: Some(block_header.gas_limit),
-    //     eip_1559_params: None,
-    // };
-    //
-    // let mut builder = StatelessL2Builder::new(
-    //     rollup_config,
-    //     OpEvmFactory::default(),
-    //     trie_db.clone(),
-    //     EnclaveTrieHinter,
-    //     parent_header.clone(),
-    // );
-    //
-    // let outcome = builder.build_block(attrs)?;
-    // ```
-    //
-    // For now, this returns a placeholder indicating execution is not yet implemented.
-    Err(ExecutorError::ExecutionFailed(
-        "EVM execution not yet fully integrated - block validation only".to_string(),
-    ))
+    // Create stateless L2 builder
+    let mut builder = StatelessL2Builder::new(
+        rollup_config,
+        OpEvmFactory::default(),
+        trie_db,
+        EnclaveTrieHinter,
+        parent_header,
+    );
+
+    // Execute the block
+    let outcome = builder
+        .build_block(attrs)
+        .map_err(|e| ExecutorError::ExecutionFailed(format!("{e}")))?;
+
+    Ok(BlockExecutionResult {
+        state_root: outcome.header.state_root,
+        receipts_root: outcome.header.receipts_root,
+        gas_used: outcome.execution_result.gas_used,
+    })
 }
 
 /// Verify that a block's execution results match the expected values.
