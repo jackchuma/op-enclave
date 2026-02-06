@@ -64,6 +64,15 @@ pub enum ProviderError {
         /// Actual hash of the block.
         actual: B256,
     },
+
+    /// Fee scalar value exceeds maximum allowed value.
+    #[error("fee scalar overflow: {field} value {value} exceeds u32::MAX")]
+    FeeScalarOverflow {
+        /// The field name that overflowed.
+        field: &'static str,
+        /// The actual value.
+        value: alloy_primitives::U256,
+    },
 }
 
 /// Top-level error type for enclave operations.

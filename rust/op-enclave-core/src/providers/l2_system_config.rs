@@ -107,7 +107,7 @@ impl L2SystemConfigFetcher {
         let mut sys_cfg = SystemConfig {
             batcher_address: l1_info.batcher_address(),
             overhead: l1_info.l1_fee_overhead(),
-            scalar: U256::from_be_bytes(self.encode_fee_scalar(&l1_info, l2_time).0),
+            scalar: U256::from_be_bytes(self.encode_fee_scalar(&l1_info, l2_time)?.0),
             gas_limit: self.header.gas_limit,
             base_fee_scalar: None,
             blob_base_fee_scalar: None,
@@ -143,7 +143,15 @@ impl L2SystemConfigFetcher {
     ///
     /// For Ecotone+ blocks (not activation block), translates the scalar fields
     /// back into the encoded scalar format.
-    fn encode_fee_scalar(&self, l1_info: &L1BlockInfoTx, l2_time: u64) -> B256 {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `blob_base_fee_scalar` or `l1_fee_scalar` exceeds `u32::MAX`.
+    fn encode_fee_scalar(
+        &self,
+        l1_info: &L1BlockInfoTx,
+        l2_time: u64,
+    ) -> Result<B256, ProviderError> {
         if is_ecotone_but_not_first_block(&self.config, l2_time) {
             // Encode v1 scalar format:
             // byte 0: version (1)
@@ -153,23 +161,28 @@ impl L2SystemConfigFetcher {
             encoded[0] = 1; // version 1
 
             // Per OP Stack spec, base_fee_scalar and blob_base_fee_scalar are always u32 values.
-            // The U256 return type is for API compatibility. If these ever exceed u32::MAX,
-            // it would indicate a protocol violation.
+            // The U256 return type is for API compatibility.
             let blob_scalar: u32 = l1_info
                 .blob_base_fee_scalar()
                 .try_into()
-                .expect("blob_base_fee_scalar must fit in u32 per OP Stack spec");
+                .map_err(|_| ProviderError::FeeScalarOverflow {
+                    field: "blob_base_fee_scalar",
+                    value: l1_info.blob_base_fee_scalar(),
+                })?;
             let base_scalar: u32 = l1_info
                 .l1_fee_scalar()
                 .try_into()
-                .expect("base_fee_scalar must fit in u32 per OP Stack spec");
+                .map_err(|_| ProviderError::FeeScalarOverflow {
+                    field: "base_fee_scalar",
+                    value: l1_info.l1_fee_scalar(),
+                })?;
 
             encoded[24..28].copy_from_slice(&blob_scalar.to_be_bytes());
             encoded[28..32].copy_from_slice(&base_scalar.to_be_bytes());
-            B256::from(encoded)
+            Ok(B256::from(encoded))
         } else {
             // Pre-Ecotone or Ecotone activation block: use raw scalar from L1FeeScalar
-            B256::from(l1_info.l1_fee_scalar().to_be_bytes::<32>())
+            Ok(B256::from(l1_info.l1_fee_scalar().to_be_bytes::<32>()))
         }
     }
 
@@ -213,7 +226,7 @@ const fn is_fork_active_but_not_activation(fork_time: Option<u64>, l2_time: u64)
         Some(activation_time) => {
             // Fork is active if l2_time >= activation_time
             // Not activation block if l2_time > activation_time
-            l2_time >= activation_time && l2_time > activation_time
+            l2_time > activation_time
         }
         None => false,
     }
