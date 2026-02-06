@@ -9,7 +9,7 @@ use alloy_primitives::{Address, B256, Bytes, address};
 use kona_genesis::{L1ChainConfig, RollupConfig};
 use op_alloy_consensus::OpTxEnvelope;
 
-use super::attributes::{compare_deposits, extract_deposits_from_receipts, print_deposit_comparison};
+use super::attributes::extract_deposits_from_receipts;
 use super::evm::{build_l1_block_info_from_deposit, execute_block};
 use super::l2_block_ref::l2_block_to_block_info;
 use super::trie_db::EnclaveTrieDB;
@@ -17,17 +17,6 @@ use super::witness::{ExecutionWitness, transform_witness};
 use crate::error::ExecutorError;
 use crate::providers::{L2SystemConfigFetcher, compute_l1_receipt_root, compute_tx_root};
 use crate::types::account::AccountResult;
-
-/// Options for stateless execution.
-#[derive(Debug, Clone, Default)]
-pub struct ExecutionOptions {
-    /// If Some, use these actual block transactions instead of regenerating deposits.
-    /// This bypasses deposit regeneration for isolated testing of EVM execution.
-    pub use_actual_txs: Option<Vec<Bytes>>,
-
-    /// If true, compare regenerated deposits against actual and print diagnostics.
-    pub compare_deposits: bool,
-}
 
 /// Maximum sequencer drift in seconds (Fjord hardfork).
 /// If a block's timestamp exceeds l1_origin.timestamp + MAX_SEQUENCER_DRIFT_FJORD,
@@ -237,14 +226,6 @@ pub fn execute_stateless(
     let l1_block_info = build_l1_block_info_from_deposit(&first_prev_deposit_calldata, spec_id)
         .map_err(|e| ExecutorError::ExecutionFailed(format!("Failed to build L1BlockInfo: {e}")))?;
 
-    // Debug: print L1BlockInfo values for fee debugging
-    eprintln!("  L1BlockInfo: l1_base_fee={}, l1_blob_base_fee={:?}, l1_base_fee_scalar={}, l1_blob_base_fee_scalar={:?}",
-        l1_block_info.l1_base_fee,
-        l1_block_info.l1_blob_base_fee,
-        l1_block_info.l1_base_fee_scalar,
-        l1_block_info.l1_blob_base_fee_scalar,
-    );
-
     // Execute block via StatelessL2Builder
     let execution_result = execute_block(
         rollup_config,
@@ -272,215 +253,6 @@ pub fn execute_stateless(
     }
 
     // 9. Verify message account (stateless.go:132-137)
-    if message_account.address != L2_TO_L1_MESSAGE_PASSER {
-        return Err(ExecutorError::InvalidMessageAccountAddress);
-    }
-    message_account
-        .verify(execution_result.state_root)
-        .map_err(|e| ExecutorError::MessageAccountVerificationFailed(e.to_string()))?;
-
-    Ok(ExecutionResult {
-        state_root: execution_result.state_root,
-        receipt_hash: execution_result.receipts_root,
-    })
-}
-
-/// Execute stateless block validation with options for diagnostics and bypass modes.
-///
-/// This is the same as `execute_stateless` but with additional options for:
-/// - Using actual block transactions instead of regenerating deposits (bypass mode)
-/// - Comparing regenerated deposits against actual and printing diagnostics
-///
-/// # Arguments
-///
-/// Same as `execute_stateless`, plus:
-/// * `actual_block_txs` - Optional actual block transactions for comparison/bypass
-/// * `options` - Execution options for diagnostics and bypass modes
-#[allow(clippy::too_many_arguments)]
-pub fn execute_stateless_with_options(
-    rollup_config: &RollupConfig,
-    l1_config: &L1ChainConfig,
-    l1_origin: &Header,
-    l1_receipts: &[ReceiptEnvelope],
-    previous_block_txs: &[Bytes],
-    block_header: &Header,
-    sequenced_txs: &[Bytes],
-    witness: ExecutionWitness,
-    message_account: &AccountResult,
-    actual_block_txs: Option<&[Bytes]>,
-    options: &ExecutionOptions,
-) -> Result<ExecutionResult, ExecutorError> {
-    // 1. Verify L1 receipts hash
-    let computed_receipt_root = compute_l1_receipt_root(l1_receipts);
-    if computed_receipt_root != l1_origin.receipts_root {
-        return Err(ExecutorError::InvalidReceipts);
-    }
-
-    // Transform the witness
-    let transformed = transform_witness(witness)?;
-
-    // 2. Verify parent hash
-    let previous_header = transformed.previous_header().clone();
-    let previous_block_hash = previous_header.hash_slow();
-    if block_header.parent_hash != previous_block_hash {
-        return Err(ExecutorError::InvalidParentHash);
-    }
-
-    // 3. Check sequencer drift
-    if !sequenced_txs.is_empty()
-        && block_header.timestamp > l1_origin.timestamp + MAX_SEQUENCER_DRIFT_FJORD
-    {
-        return Err(ExecutorError::L1OriginTooOld);
-    }
-
-    // 4. Verify previous block transactions hash
-    let previous_txs_rlp: Vec<Vec<u8>> = previous_block_txs.iter().map(|tx| tx.to_vec()).collect();
-    let previous_tx_hash = compute_tx_root(&previous_txs_rlp);
-    if previous_tx_hash != previous_header.transactions_root {
-        return Err(ExecutorError::InvalidTxHash);
-    }
-
-    // 5. Verify L1 origin is valid
-    let first_prev_tx = previous_block_txs.first().ok_or_else(|| {
-        ExecutorError::ExecutionFailed("previous block has no transactions".to_string())
-    })?;
-
-    let l2_parent = l2_block_to_block_info(
-        rollup_config,
-        &previous_header,
-        previous_block_hash,
-        first_prev_tx,
-    )?;
-
-    let l1_origin_hash = l1_origin.hash_slow();
-
-    if l2_parent.l1_origin.hash != l1_origin_hash
-        && l2_parent.l1_origin.hash != l1_origin.parent_hash
-    {
-        return Err(ExecutorError::InvalidL1Origin);
-    }
-
-    let include_deposits = l2_parent.l1_origin.hash != l1_origin_hash;
-    let sequence_number = if include_deposits {
-        0
-    } else {
-        l2_parent.seq_num + 1
-    };
-
-    // 6. Check sequenced transactions don't include deposits
-    for tx_bytes in sequenced_txs {
-        let tx = OpTxEnvelope::decode_2718(&mut tx_bytes.as_ref())
-            .map_err(|e| ExecutorError::TxDecodeFailed(e.to_string()))?;
-
-        if tx.is_deposit() {
-            return Err(ExecutorError::SequencedTxCannotBeDeposit);
-        }
-    }
-
-    // Create the TrieDB from the transformed witness
-    let trie_db = EnclaveTrieDB::from_witness(transformed);
-
-    // Get system config from previous block
-    let first_prev_tx_calldata = previous_block_txs.first().and_then(|tx_bytes| {
-        let tx = OpTxEnvelope::decode_2718(&mut tx_bytes.as_ref()).ok()?;
-        match &tx {
-            OpTxEnvelope::Deposit(d) => Some(d.input.clone()),
-            _ => None,
-        }
-    });
-    let l2_fetcher = L2SystemConfigFetcher::new(
-        rollup_config.clone(),
-        previous_block_hash,
-        previous_header.clone(),
-        first_prev_tx_calldata,
-    );
-    let system_config = l2_fetcher.system_config_by_l2_hash(previous_block_hash)?;
-
-    // Extract/regenerate deposit transactions
-    let receipts_for_deposits: &[ReceiptEnvelope] = if include_deposits {
-        l1_receipts
-    } else {
-        &[]
-    };
-    let regenerated_deposits = extract_deposits_from_receipts(
-        rollup_config,
-        l1_config,
-        &system_config,
-        l1_origin,
-        l1_origin_hash,
-        receipts_for_deposits,
-        block_header.number,
-        block_header.timestamp,
-        sequence_number,
-    )?;
-
-    // Diagnostic comparison if requested
-    if options.compare_deposits {
-        if let Some(actual_txs) = actual_block_txs {
-            if let Some(actual_first_tx) = actual_txs.first() {
-                if let Some(generated_first_tx) = regenerated_deposits.first() {
-                    let comparison = compare_deposits(actual_first_tx, generated_first_tx);
-                    print_deposit_comparison(&comparison);
-                }
-            }
-        }
-    }
-
-    // Determine which transactions to use
-    let all_txs = if let Some(actual_txs) = options.use_actual_txs.as_ref() {
-        // Bypass mode: use actual block transactions
-        eprintln!("  [BYPASS MODE] Using actual block transactions instead of regenerated deposits");
-        actual_txs.clone()
-    } else {
-        // Normal mode: use regenerated deposits + sequenced txs
-        [regenerated_deposits, sequenced_txs.to_vec()].concat()
-    };
-
-    // Create sealed parent header for builder
-    let parent_sealed = previous_header.seal_slow();
-
-    // Build L1BlockInfo from the PREVIOUS block's L1 info deposit
-    let spec_id = rollup_config.spec_id(block_header.timestamp);
-    let first_prev_deposit_calldata = previous_block_txs.first().and_then(|tx_bytes| {
-        let tx = OpTxEnvelope::decode_2718(&mut tx_bytes.as_ref()).ok()?;
-        match &tx {
-            OpTxEnvelope::Deposit(d) => Some(d.input.clone()),
-            _ => None,
-        }
-    }).ok_or_else(|| {
-        ExecutorError::ExecutionFailed("previous block has no deposit transaction".to_string())
-    })?;
-
-    let l1_block_info = build_l1_block_info_from_deposit(&first_prev_deposit_calldata, spec_id)
-        .map_err(|e| ExecutorError::ExecutionFailed(format!("Failed to build L1BlockInfo: {e}")))?;
-
-    // Execute block via StatelessL2Builder
-    let execution_result = execute_block(
-        rollup_config,
-        parent_sealed,
-        block_header,
-        &all_txs,
-        trie_db,
-        l1_block_info,
-    )?;
-
-    // Verify state root matches
-    if execution_result.state_root != block_header.state_root {
-        return Err(ExecutorError::InvalidStateRoot {
-            expected: block_header.state_root,
-            computed: execution_result.state_root,
-        });
-    }
-
-    // Verify receipts root matches
-    if execution_result.receipts_root != block_header.receipts_root {
-        return Err(ExecutorError::InvalidReceiptHash {
-            expected: block_header.receipts_root,
-            computed: execution_result.receipts_root,
-        });
-    }
-
-    // Verify message account
     if message_account.address != L2_TO_L1_MESSAGE_PASSER {
         return Err(ExecutorError::InvalidMessageAccountAddress);
     }

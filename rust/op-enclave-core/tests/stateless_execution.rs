@@ -12,8 +12,7 @@ use alloy_primitives::{B256, Bytes, U256, address, b256};
 use serde::{Deserialize, Serialize};
 
 use op_enclave_core::executor::{
-    ExecutionOptions, ExecutionWitness, compare_deposits, execute_stateless,
-    execute_stateless_with_options, print_deposit_comparison, validate_not_deposit,
+    ExecutionWitness, execute_stateless, validate_not_deposit,
     validate_sequencer_drift, MAX_SEQUENCER_DRIFT_FJORD,
 };
 use op_enclave_core::types::account::{AccountResult, StorageProof};
@@ -240,143 +239,10 @@ fn test_execute_stateless_base_sepolia_block() {
 
                 let fixture = load_fixture(name).expect("Failed to load fixture");
 
-                // Diagnostic: Show witness and fixture stats
-                println!("  Headers: {}", fixture.witness.headers.len());
-                println!("  Codes: {}", fixture.witness.codes.len());
-                println!("  State nodes: {}", fixture.witness.state.len());
-                println!("  L1 receipts: {}", fixture.l1_receipts.len());
-                println!("  Previous block txs: {}", fixture.previous_block_txs.len());
-                println!("  Sequenced txs: {}", fixture.sequenced_txs.len());
                 println!("  Block number: {}", fixture.block_header.number);
                 println!("  Block timestamp: {}", fixture.block_header.timestamp);
 
-                // Debug: Check what the actual first tx in the block should be
-                // Get actual block's first tx from RPC for comparison
-                use alloy_primitives::keccak256;
-                if !fixture.sequenced_txs.is_empty() {
-                    let first_seq_tx = &fixture.sequenced_txs[0];
-                    let tx_hash = keccak256(first_seq_tx);
-                    println!("  First sequenced tx hash: {tx_hash}");
-                }
-
-                // Print first previous block tx (should be deposit)
-                if !fixture.previous_block_txs.is_empty() {
-                    let first_prev_tx = &fixture.previous_block_txs[0];
-                    println!(
-                        "  Previous block deposit tx (first 100 bytes): 0x{}...",
-                        hex::encode(&first_prev_tx[..first_prev_tx.len().min(100)])
-                    );
-                }
-
-                // Debug: Build the deposits to see what L1 info tx we're generating
-                use op_enclave_core::executor::{
-                    extract_deposits_from_receipts, l2_block_to_block_info,
-                };
-                use op_enclave_core::providers::L2SystemConfigFetcher;
-                use op_alloy_consensus::OpTxEnvelope;
-                use alloy_eips::eip2718::Decodable2718;
-
-                // Parse l2_parent info from previous block
-                let first_prev_tx_bytes = &fixture.previous_block_txs[0];
-                let first_prev_tx =
-                    OpTxEnvelope::decode_2718(&mut first_prev_tx_bytes.as_ref()).unwrap();
-                let first_prev_tx_calldata = match &first_prev_tx {
-                    OpTxEnvelope::Deposit(d) => Some(d.input.clone()),
-                    _ => None,
-                };
-
-                let prev_header = fixture.witness.headers[0].clone();
-                let prev_hash = prev_header.hash_slow();
-                let l2_fetcher = L2SystemConfigFetcher::new(
-                    fixture.rollup_config.clone(),
-                    prev_hash,
-                    prev_header.clone(),
-                    first_prev_tx_calldata,
-                );
-                let system_config = l2_fetcher.system_config_by_l2_hash(prev_hash).unwrap();
-
-                let l2_parent = l2_block_to_block_info(
-                    &fixture.rollup_config,
-                    &prev_header,
-                    prev_hash,
-                    first_prev_tx_bytes,
-                )
-                .unwrap();
-
-                let l1_origin_hash = fixture.l1_origin.hash_slow();
-                let include_deposits = l2_parent.l1_origin.hash != l1_origin_hash;
-                let sequence_number = if include_deposits {
-                    0
-                } else {
-                    l2_parent.seq_num + 1
-                };
-
-                println!("  L2 parent seq_num: {}", l2_parent.seq_num);
-                println!("  L2 parent L1 origin hash: {}", l2_parent.l1_origin.hash);
-                println!("  Current L1 origin hash: {l1_origin_hash}");
-                println!("  Include deposits: {include_deposits}");
-                println!("  Sequence number: {sequence_number}");
-
-                let deposits = extract_deposits_from_receipts(
-                    &fixture.rollup_config,
-                    &fixture.l1_config,
-                    &system_config,
-                    &fixture.l1_origin,
-                    l1_origin_hash,
-                    if include_deposits {
-                        &fixture.l1_receipts
-                    } else {
-                        &[]
-                    },
-                    fixture.block_header.number,
-                    fixture.block_header.timestamp,
-                    sequence_number,
-                )
-                .unwrap();
-
-                println!("  Generated deposits: {}", deposits.len());
-                if !deposits.is_empty() {
-                    println!(
-                        "  Generated L1 info deposit (first 100 bytes): 0x{}...",
-                        hex::encode(&deposits[0][..deposits[0].len().min(100)])
-                    );
-                }
-
-                // PHASE 1: Diagnostic deposit comparison
-                // Compare regenerated deposit against actual block's first transaction
-                if !fixture.actual_block_txs.is_empty() && !deposits.is_empty() {
-                    println!("\n  === DEPOSIT COMPARISON ===");
-                    let actual_first_tx = &fixture.actual_block_txs[0];
-                    let generated_first_deposit = &deposits[0];
-                    let comparison = compare_deposits(actual_first_tx, generated_first_deposit);
-                    print_deposit_comparison(&comparison);
-
-                    if !comparison.matches {
-                        println!("  WARNING: Regenerated deposit does not match actual block deposit!");
-                        println!("  This may cause execution mismatches.");
-                    }
-                } else if fixture.actual_block_txs.is_empty() {
-                    println!("  NOTE: No actual_block_txs in fixture - comparison skipped");
-                    println!("  Regenerate the fixture to enable deposit comparison");
-                }
-
-                // Debug: Check state roots
-                let parent_state_root = prev_header.state_root;
-                println!("  Parent state root: {parent_state_root}");
-                println!(
-                    "  Parent state root in witness: {}",
-                    fixture.witness.state.contains_key(&format!("{parent_state_root:?}"))
-                );
-
-                // Run with regenerated deposits (no bypass mode).
-                // The L1ChainConfig now includes proper blob_schedule, so the blob_base_fee
-                // calculation should match the actual sequencer's computation.
-                let options = ExecutionOptions {
-                    use_actual_txs: None, // Use regenerated deposits, not bypass mode
-                    compare_deposits: !fixture.actual_block_txs.is_empty(),
-                };
-
-                let result = execute_stateless_with_options(
+                let result = execute_stateless(
                     &fixture.rollup_config,
                     &fixture.l1_config,
                     &fixture.l1_origin,
@@ -386,12 +252,6 @@ fn test_execute_stateless_base_sepolia_block() {
                     &fixture.sequenced_txs,
                     fixture.witness,
                     &fixture.message_account,
-                    if fixture.actual_block_txs.is_empty() {
-                        None
-                    } else {
-                        Some(&fixture.actual_block_txs)
-                    },
-                    &options,
                 );
 
                 assert!(
@@ -410,70 +270,6 @@ fn test_execute_stateless_base_sepolia_block() {
                 );
 
                 println!("Fixture {name} passed!");
-            }
-        }
-    }
-}
-
-/// Test that bypass mode (using actual transactions) produces correct results.
-/// This isolates whether issues are in deposit regeneration vs EVM execution.
-#[test]
-fn test_execute_stateless_bypass_mode() {
-    let dir = fixtures_dir();
-    let entries = fs::read_dir(&dir).expect("Failed to read fixtures directory");
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with("base_sepolia_") && name.ends_with(".json") {
-                let fixture = load_fixture(name).expect("Failed to load fixture");
-
-                // Skip fixtures that don't have actual_block_txs
-                if fixture.actual_block_txs.is_empty() {
-                    println!("Skipping {name} - no actual_block_txs (regenerate fixture to enable)");
-                    continue;
-                }
-
-                println!("Testing BYPASS MODE with fixture: {name}");
-                println!("  Actual block txs: {}", fixture.actual_block_txs.len());
-
-                // Use bypass mode: pass actual transactions directly
-                let options = ExecutionOptions {
-                    use_actual_txs: Some(fixture.actual_block_txs.clone()),
-                    compare_deposits: true,
-                };
-
-                let result = execute_stateless_with_options(
-                    &fixture.rollup_config,
-                    &fixture.l1_config,
-                    &fixture.l1_origin,
-                    &fixture.l1_receipts,
-                    &fixture.previous_block_txs,
-                    &fixture.block_header,
-                    &fixture.sequenced_txs,
-                    fixture.witness,
-                    &fixture.message_account,
-                    Some(&fixture.actual_block_txs),
-                    &options,
-                );
-
-                match result {
-                    Ok(execution) => {
-                        println!("  Bypass mode execution succeeded!");
-                        println!("  State root match: {}", execution.state_root == fixture.expected_state_root);
-                        println!("  Receipt hash match: {}", execution.receipt_hash == fixture.expected_receipts_root);
-
-                        if execution.state_root == fixture.expected_state_root
-                            && execution.receipt_hash == fixture.expected_receipts_root
-                        {
-                            println!("  BYPASS MODE PASSES - issue is in deposit regeneration, not EVM!");
-                        }
-                    }
-                    Err(e) => {
-                        println!("  Bypass mode execution failed: {e:?}");
-                        println!("  This indicates an issue with EVM execution or witness data, not deposit regeneration.");
-                    }
-                }
             }
         }
     }

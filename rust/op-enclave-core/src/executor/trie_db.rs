@@ -28,30 +28,37 @@ pub struct EnclaveTrieDB {
 
     /// The parent block header.
     parent_header: Header,
+
+    /// Cached parent block hash (computed once on construction).
+    parent_hash: B256,
 }
 
 impl EnclaveTrieDB {
     /// Creates a new `EnclaveTrieDB` from a transformed witness.
     #[must_use]
     pub fn from_witness(witness: TransformedWitness) -> Self {
+        let parent_hash = witness.previous_header.hash_slow();
         Self {
             codes: witness.codes,
             state: witness.state,
             parent_header: witness.previous_header,
+            parent_hash,
         }
     }
 
     /// Creates a new `EnclaveTrieDB` with the given data.
     #[must_use]
-    pub const fn new(
+    pub fn new(
         codes: HashMap<B256, Bytes>,
         state: HashMap<B256, Bytes>,
         parent_header: Header,
     ) -> Self {
+        let parent_hash = parent_header.hash_slow();
         Self {
             codes,
             state,
             parent_header,
+            parent_hash,
         }
     }
 
@@ -74,8 +81,7 @@ impl EnclaveTrieDB {
     ///
     /// Returns `ExecutorError::ExecutionFailed` if the header is not found.
     pub fn header_by_hash(&self, hash: B256) -> Result<Header, ExecutorError> {
-        let parent_hash = self.parent_header.hash_slow();
-        if hash == parent_hash {
+        if hash == self.parent_hash {
             Ok(self.parent_header.clone())
         } else {
             Err(ExecutorError::ExecutionFailed(format!(
@@ -103,8 +109,8 @@ impl EnclaveTrieDB {
 
     /// Returns the parent block hash.
     #[must_use]
-    pub fn parent_hash(&self) -> B256 {
-        self.parent_header.hash_slow()
+    pub const fn parent_hash(&self) -> B256 {
+        self.parent_hash
     }
 
     /// Returns the number of bytecode entries.
@@ -163,8 +169,7 @@ impl TrieDBProvider for EnclaveTrieDB {
     }
 
     fn header_by_hash(&self, hash: B256) -> Result<Header, Self::Error> {
-        let parent_hash = self.parent_header.hash_slow();
-        if hash == parent_hash {
+        if hash == self.parent_hash {
             Ok(self.parent_header.clone())
         } else {
             Err(TrieProviderError(format!(
