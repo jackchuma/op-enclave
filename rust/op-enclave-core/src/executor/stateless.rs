@@ -165,19 +165,27 @@ pub fn execute_stateless(
 
     // 7-8. Build all transactions and execute via EVM
     // Get system config from L2 fetcher using previous block
-    // Extract the calldata from the first deposit transaction
-    let first_prev_tx_calldata = previous_block_txs.first().and_then(|tx_bytes| {
-        let tx = OpTxEnvelope::decode_2718(&mut tx_bytes.as_ref()).ok()?;
-        match &tx {
-            OpTxEnvelope::Deposit(d) => Some(d.input.clone()),
-            _ => None,
+    // Extract the calldata from the first deposit transaction (used for both L2SystemConfigFetcher and L1BlockInfo)
+    let first_prev_deposit_calldata = {
+        let first_prev_tx = previous_block_txs.first().ok_or_else(|| {
+            ExecutorError::ExecutionFailed("previous block has no transactions".to_string())
+        })?;
+        let tx = OpTxEnvelope::decode_2718(&mut first_prev_tx.as_ref())
+            .map_err(|e| ExecutorError::TxDecodeFailed(e.to_string()))?;
+        match tx {
+            OpTxEnvelope::Deposit(d) => d.input.clone(),
+            _ => {
+                return Err(ExecutorError::ExecutionFailed(
+                    "first previous block transaction is not a deposit".to_string(),
+                ))
+            }
         }
-    });
+    };
     let l2_fetcher = L2SystemConfigFetcher::new(
         rollup_config.clone(),
         previous_block_hash,
         previous_header.clone(),
-        first_prev_tx_calldata,
+        Some(first_prev_deposit_calldata.clone()),
     );
     let system_config = l2_fetcher.system_config_by_l2_hash(previous_block_hash)?;
 
@@ -213,16 +221,6 @@ pub fn execute_stateless(
     // during execution, we pre-populate with the previous values so that L1 fee calculations
     // work correctly for transactions before the L1Block contract is read.
     let spec_id = rollup_config.spec_id(block_header.timestamp);
-    let first_prev_deposit_calldata = previous_block_txs.first().and_then(|tx_bytes| {
-        let tx = OpTxEnvelope::decode_2718(&mut tx_bytes.as_ref()).ok()?;
-        match &tx {
-            OpTxEnvelope::Deposit(d) => Some(d.input.clone()),
-            _ => None,
-        }
-    }).ok_or_else(|| {
-        ExecutorError::ExecutionFailed("previous block has no deposit transaction".to_string())
-    })?;
-
     let l1_block_info = build_l1_block_info_from_deposit(&first_prev_deposit_calldata, spec_id)
         .map_err(|e| ExecutorError::ExecutionFailed(format!("Failed to build L1BlockInfo: {e}")))?;
 
