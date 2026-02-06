@@ -82,7 +82,8 @@ pub fn sign_proposal_data_sync(
         .map_err(|e| ProposalError::SigningFailed(e.to_string()))?;
 
     // Convert to 65-byte format: r (32) || s (32) || v (1)
-    // Use as_rsy() which returns v as 0 or 1, matching Go's crypto.Sign format
+    // Use as_rsy() which returns v as 0 or 1 (parity bit).
+    // Note: Go's crypto.Sign returns v as 27/28, but verification uses only r,s (first 64 bytes).
     let sig_bytes = signature.as_rsy();
 
     Ok(Bytes::from(sig_bytes.to_vec()))
@@ -139,13 +140,7 @@ mod tests {
 
     #[test]
     fn test_build_signing_data_length() {
-        let data = build_signing_data(
-            B256::ZERO,
-            B256::ZERO,
-            U256::ZERO,
-            B256::ZERO,
-            B256::ZERO,
-        );
+        let data = build_signing_data(B256::ZERO, B256::ZERO, U256::ZERO, B256::ZERO, B256::ZERO);
         assert_eq!(data.len(), SIGNING_DATA_LENGTH);
     }
 
@@ -157,8 +152,7 @@ mod tests {
         let l2_block_number = U256::from(12345);
         let prev_output_root =
             b256!("3333333333333333333333333333333333333333333333333333333333333333");
-        let output_root =
-            b256!("4444444444444444444444444444444444444444444444444444444444444444");
+        let output_root = b256!("4444444444444444444444444444444444444444444444444444444444444444");
 
         let data = build_signing_data(
             config_hash,
@@ -193,8 +187,8 @@ mod tests {
         assert_eq!(signature.len(), SIGNATURE_LENGTH);
 
         let public_key = crate::crypto::public_key_bytes(&signer);
-        let valid = verify_proposal_signature(&public_key, &data, &signature)
-            .expect("verification failed");
+        let valid =
+            verify_proposal_signature(&public_key, &data, &signature).expect("verification failed");
         assert!(valid);
     }
 

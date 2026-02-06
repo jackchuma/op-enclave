@@ -302,6 +302,39 @@ impl Server {
         ))
     }
 
+    /// Create a server for testing without RSA key generation.
+    ///
+    /// This is much faster than `new()` because RSA-4096 key generation takes ~7s
+    /// in debug mode. Tests that don't need RSA decryption should use this.
+    ///
+    /// # Warning
+    /// The decryption key is NOT usable - do not use for actual encryption/decryption tests.
+    #[cfg(test)]
+    pub fn new_for_testing() -> Result<Self, ServerError> {
+        use rand::rngs::OsRng;
+
+        let mut rng = OsRng;
+
+        // Generate ECDSA signer (fast, ~1ms)
+        let signer_key = generate_signer(&mut rng)?;
+
+        tracing::info!(
+            address = %signer_key.address(),
+            "test server initialized (no RSA key)"
+        );
+
+        // Use a minimal RSA key (smallest allowed: 64 bytes = 512 bits) for struct completeness.
+        // This key is NOT secure and MUST NOT be used for actual encryption.
+        let decryption_key = rsa::RsaPrivateKey::new(&mut rng, 512)
+            .map_err(|e| CryptoError::RsaKeyGeneration(e.to_string()))?;
+
+        Ok(Self {
+            pcr0: Vec::new(),
+            signer_key: RwLock::new(signer_key),
+            decryption_key,
+        })
+    }
+
     /// Aggregate multiple proposals into a single proposal.
     ///
     /// This method:
@@ -469,7 +502,7 @@ mod tests {
 
     #[test]
     fn test_aggregate_empty_proposals() {
-        let server = Server::new().expect("failed to create server");
+        let server = Server::new_for_testing().expect("failed to create server");
 
         let result = server.aggregate(B256::ZERO, B256::ZERO, &[]);
 
@@ -481,7 +514,7 @@ mod tests {
 
     #[test]
     fn test_aggregate_single_proposal() {
-        let server = Server::new().expect("failed to create server");
+        let server = Server::new_for_testing().expect("failed to create server");
 
         // Create a proposal signed by this server
         let config_hash = B256::repeat_byte(0x11);
@@ -521,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_aggregate_multiple_proposals() {
-        let server = Server::new().expect("failed to create server");
+        let server = Server::new_for_testing().expect("failed to create server");
 
         let config_hash = B256::repeat_byte(0x11);
         let l1_origin_hash_1 = B256::repeat_byte(0x22);
@@ -576,8 +609,7 @@ mod tests {
             config_hash,
         );
 
-        let result =
-            server.aggregate(config_hash, prev_output_root, &[proposal_1, proposal_2]);
+        let result = server.aggregate(config_hash, prev_output_root, &[proposal_1, proposal_2]);
 
         assert!(result.is_ok());
         let aggregated = result.unwrap();
@@ -592,7 +624,7 @@ mod tests {
 
     #[test]
     fn test_aggregate_invalid_signature_rejected() {
-        let server = Server::new().expect("failed to create server");
+        let server = Server::new_for_testing().expect("failed to create server");
 
         let config_hash = B256::repeat_byte(0x11);
         let l1_origin_hash_1 = B256::repeat_byte(0x22);
@@ -642,7 +674,9 @@ mod tests {
         assert!(
             matches!(
                 &result,
-                Err(ServerError::Proposal(ProposalError::InvalidSignature { index: 1 }))
+                Err(ServerError::Proposal(ProposalError::InvalidSignature {
+                    index: 1
+                }))
             ),
             "Expected InvalidSignature error at index 1, got: {:?}",
             result
