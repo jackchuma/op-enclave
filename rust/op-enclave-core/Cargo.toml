@@ -11,6 +11,7 @@ alloy-primitives.workspace = true
 alloy-consensus.workspace = true
 alloy-rlp.workspace = true
 alloy-trie.workspace = true
+alloy-evm.workspace = true
 alloy-op-evm.workspace = true
 alloy-rpc-types-engine.workspace = true
 kona-genesis.workspace = true

@@ -44,13 +44,17 @@ mod witness;
 
 pub use attributes::{
     DEPOSIT_EVENT_TOPIC, L1_ATTRIBUTES_DEPOSITOR, L1_ATTRIBUTES_PREDEPLOYED,
-    extract_deposits_from_receipts,
+    DepositComparison, L1BlockInfoComparison,
+    compare_deposits, extract_deposits_from_receipts, print_deposit_comparison,
 };
-pub use evm::{BlockExecutionResult, EnclaveTrieHinter, execute_block, verify_execution_result};
+pub use evm::{
+    BlockExecutionResult, EnclaveEvmFactory, EnclaveTrieHinter, L1BlockInfo,
+    build_l1_block_info_from_deposit, execute_block, verify_execution_result,
+};
 pub use l2_block_ref::l2_block_to_block_info;
 pub use stateless::{
-    ExecutionResult, L2_TO_L1_MESSAGE_PASSER, MAX_SEQUENCER_DRIFT_FJORD, execute_stateless,
-    validate_not_deposit, validate_sequencer_drift,
+    ExecutionOptions, ExecutionResult, L2_TO_L1_MESSAGE_PASSER, MAX_SEQUENCER_DRIFT_FJORD,
+    execute_stateless, execute_stateless_with_options, validate_not_deposit, validate_sequencer_drift,
 };
 pub use trie_db::{EnclaveTrieDB, TrieProviderError};
 pub use witness::{ExecutionWitness, TransformedWitness, transform_witness};
