@@ -23,8 +23,8 @@ RUN linuxkit build --format kernel+initrd --no-sbom --name init-ramdisk ./eif/in
 RUN linuxkit build --format kernel+initrd --no-sbom --name user-ramdisk ./eif/user-ramdisk.yaml
 
 
-# rust:1.83
-FROM rust:1.83 AS eif
+# rust:1.85
+FROM rust:1.85 AS eif
 
 RUN mkdir /build
 WORKDIR /build
