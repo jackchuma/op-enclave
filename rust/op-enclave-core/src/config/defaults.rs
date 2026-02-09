@@ -55,7 +55,7 @@ pub fn default_rollup_config() -> RollupConfig {
             holocene_time: Some(0),
             pectra_blob_schedule_time: None,
             isthmus_time: Some(0),
-            jovian_time: None,
+            jovian_time: Some(0),
             interop_time: None,
         },
 
