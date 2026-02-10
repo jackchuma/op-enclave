@@ -245,7 +245,6 @@ impl EnclaveClient {
     /// # Errors
     ///
     /// Returns an error if the RPC call fails or block validation fails.
-    #[allow(clippy::too_many_arguments)]
     pub async fn execute_stateless(
         &self,
         req: ExecuteStatelessRequest,

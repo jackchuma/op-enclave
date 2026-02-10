@@ -28,7 +28,6 @@ mod client_error;
 
 pub use client::EnclaveClient;
 pub use client_error::ClientError;
-pub use op_enclave_core::ExecuteStatelessRequest;
 
 // Re-export core types
 pub use op_enclave_core::*;
