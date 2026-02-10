@@ -9,9 +9,9 @@ use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
 use serde::{Deserialize, Serialize};
 
-use op_enclave_core::{ChainConfig, Proposal};
 use op_enclave_core::executor::ExecutionWitness;
 use op_enclave_core::types::account::AccountResult;
+use op_enclave_core::{ChainConfig, Proposal};
 
 use crate::client_error::ClientError;
 
@@ -277,7 +277,7 @@ impl EnclaveClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn execute_stateless(
         &self,
-        req: ExecuteStatelessRequest
+        req: ExecuteStatelessRequest,
     ) -> Result<Proposal, ClientError> {
         self.inner
             .request("enclave_executeStateless", rpc_params![req])

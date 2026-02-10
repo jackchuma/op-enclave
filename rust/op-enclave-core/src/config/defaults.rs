@@ -244,7 +244,10 @@ mod tests {
     #[test]
     fn test_l1_config_for_l2_chain_id() {
         assert_eq!(l1_config_for_l2_chain_id(8453).unwrap().chain_id, 1);
-        assert_eq!(l1_config_for_l2_chain_id(84532).unwrap().chain_id, 11_155_111);
+        assert_eq!(
+            l1_config_for_l2_chain_id(84532).unwrap().chain_id,
+            11_155_111
+        );
         assert_eq!(
             l1_config_for_l2_chain_id(11_155_420).unwrap().chain_id,
             11_155_111
