@@ -5,12 +5,12 @@
 
 use alloy_consensus::{Header, ReceiptEnvelope};
 use alloy_primitives::{B256, Bytes};
+use kona_genesis::ChainConfig;
 use serde::{Deserialize, Serialize};
 
 use op_enclave_core::Proposal;
 use op_enclave_core::executor::ExecutionWitness;
 use op_enclave_core::types::account::AccountResult;
-use op_enclave_core::types::config::PerChainConfig;
 
 /// Request for the `executeStateless` RPC method.
 ///
@@ -18,8 +18,11 @@ use op_enclave_core::types::config::PerChainConfig;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecuteStatelessRequest {
-    /// The per-chain configuration.
-    pub config: PerChainConfig,
+    /// The full kona chain configuration.
+    pub config: ChainConfig,
+
+    /// The per-chain configuration hash used in proposal signing.
+    pub config_hash: B256,
 
     /// The L1 origin block header.
     pub l1_origin: Header,

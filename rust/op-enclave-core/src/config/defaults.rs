@@ -115,6 +115,65 @@ pub fn default_l1_config() -> L1ChainConfig {
     }
 }
 
+/// Create a Sepolia L1 chain config.
+///
+/// This includes Sepolia hardfork timestamps and blob schedule values.
+#[must_use]
+pub fn sepolia_l1_config() -> L1ChainConfig {
+    // Build the blob schedule with hardfork name -> BlobParams mapping
+    let blob_schedule: BTreeMap<String, BlobParams> = BTreeMap::from([
+        ("cancun".to_string(), BlobParams::cancun()),
+        ("prague".to_string(), BlobParams::prague()),
+        ("osaka".to_string(), BlobParams::osaka()),
+        ("bpo1".to_string(), BlobParams::bpo1()),
+        ("bpo2".to_string(), BlobParams::bpo2()),
+    ]);
+
+    // Sepolia L1 chain config with proper hardfork timestamps
+    L1ChainConfig {
+        chain_id: 11_155_111,
+        // Sepolia hardfork timestamps
+        homestead_block: Some(0),
+        eip150_block: Some(0),
+        eip155_block: Some(0),
+        eip158_block: Some(0),
+        byzantium_block: Some(0),
+        constantinople_block: Some(0),
+        petersburg_block: Some(0),
+        istanbul_block: Some(0),
+        berlin_block: Some(0),
+        london_block: Some(0),
+        // Merge (Paris) happened
+        terminal_total_difficulty_passed: true,
+        // Shanghai at 1677557088 (Mar 1, 2023)
+        shanghai_time: Some(1_677_557_088),
+        // Cancun at 1706655072 (Jan 30, 2024)
+        cancun_time: Some(1_706_655_072),
+        // Prague at 1741159200 (Mar 5, 2025)
+        prague_time: Some(1_741_159_200),
+        // BPO hardfork timestamps for Sepolia
+        bpo1_time: Some(1_761_017_184),
+        bpo2_time: Some(1_761_607_008),
+        // Blob schedule for correct blob base fee calculation
+        blob_schedule,
+        ..Default::default()
+    }
+}
+
+/// Return the L1 config for a known chain ID.
+///
+/// Supports:
+/// - `1` (Ethereum mainnet)
+/// - `11155111` (Sepolia)
+#[must_use]
+pub fn l1_config_for_chain_id(chain_id: u64) -> Option<L1ChainConfig> {
+    match chain_id {
+        1 => Some(default_l1_config()),
+        11_155_111 => Some(sepolia_l1_config()),
+        _ => None,
+    }
+}
+
 /// Create default genesis configuration.
 fn default_genesis() -> ChainGenesis {
     ChainGenesis {

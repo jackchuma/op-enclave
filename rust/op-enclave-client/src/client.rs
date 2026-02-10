@@ -9,10 +9,9 @@ use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
 use serde::{Deserialize, Serialize};
 
-use op_enclave_core::Proposal;
+use op_enclave_core::{ChainConfig, Proposal};
 use op_enclave_core::executor::ExecutionWitness;
 use op_enclave_core::types::account::AccountResult;
-use op_enclave_core::types::config::PerChainConfig;
 
 use crate::client_error::ClientError;
 
@@ -73,7 +72,8 @@ mod danger {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExecuteStatelessRequest {
-    config: PerChainConfig,
+    config: ChainConfig,
+    config_hash: B256,
     l1_origin: Header,
     l1_receipts: Vec<ReceiptEnvelope>,
     previous_block_txs: Vec<Bytes>,
@@ -267,30 +267,10 @@ impl EnclaveClient {
     #[allow(clippy::too_many_arguments)]
     pub async fn execute_stateless(
         &self,
-        config: PerChainConfig,
-        l1_origin: Header,
-        l1_receipts: Vec<ReceiptEnvelope>,
-        previous_block_txs: Vec<Bytes>,
-        block_header: Header,
-        sequenced_txs: Vec<Bytes>,
-        witness: ExecutionWitness,
-        message_account: AccountResult,
-        prev_message_account_hash: B256,
+        req: ExecuteStatelessRequest
     ) -> Result<Proposal, ClientError> {
-        let request = ExecuteStatelessRequest {
-            config,
-            l1_origin,
-            l1_receipts,
-            previous_block_txs,
-            block_header,
-            sequenced_txs,
-            witness,
-            message_account,
-            prev_message_account_hash,
-        };
-
         self.inner
-            .request("enclave_executeStateless", rpc_params![request])
+            .request("enclave_executeStateless", rpc_params![req])
             .await
             .map_err(Into::into)
     }

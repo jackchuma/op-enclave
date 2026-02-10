@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use jsonrpsee::types::ErrorObjectOwned;
 
 use op_enclave_core::Proposal;
-use op_enclave_core::config::default_l1_config;
+use op_enclave_core::config::l1_config_for_chain_id;
 
 use super::api::EnclaveApiServer;
 use super::types::{AggregateRequest, ExecuteStatelessRequest};
@@ -76,15 +76,20 @@ impl EnclaveApiServer for RpcServerImpl {
         &self,
         request: ExecuteStatelessRequest,
     ) -> Result<Proposal, ErrorObjectOwned> {
-        let rollup_config = request.config.to_rollup_config();
-        let config_hash = request.config.hash();
-        let l1_config = default_l1_config();
+        let rollup_config = request.config.as_rollup_config();
+        let l1_config = l1_config_for_chain_id(rollup_config.l1_chain_id).ok_or_else(|| {
+            ErrorObjectOwned::owned(
+                -32000,
+                format!("unsupported l1 chain id: {}", rollup_config.l1_chain_id),
+                None::<()>,
+            )
+        })?;
 
         self.server
             .execute_stateless(
                 &rollup_config,
                 &l1_config,
-                config_hash,
+                request.config_hash,
                 &request.l1_origin,
                 &request.l1_receipts,
                 &request.previous_block_txs,
