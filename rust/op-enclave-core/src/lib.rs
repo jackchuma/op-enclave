@@ -16,6 +16,7 @@ pub use types::config::{
 };
 pub use types::output::output_root_v0;
 pub use types::proposal::Proposal;
+pub use types::rpc::ExecuteStatelessRequest;
 
 // Re-export error types
 pub use error::{ConfigError, CryptoError, EnclaveError, ExecutorError, ProviderError, Result};

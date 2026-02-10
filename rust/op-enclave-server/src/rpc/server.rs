@@ -8,11 +8,11 @@ use alloy_primitives::Bytes;
 use async_trait::async_trait;
 use jsonrpsee::types::ErrorObjectOwned;
 
-use op_enclave_core::Proposal;
+use op_enclave_core::{ExecuteStatelessRequest, Proposal};
 use op_enclave_core::config::l1_config_for_l2_chain_id;
 
 use super::api::EnclaveApiServer;
-use super::types::{AggregateRequest, ExecuteStatelessRequest};
+use super::types::AggregateRequest;
 use crate::Server;
 use crate::error::ServerError;
 

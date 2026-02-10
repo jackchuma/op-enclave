@@ -6,6 +6,5 @@
 mod defaults;
 
 pub use defaults::{
-    default_l1_config, default_rollup_config, l1_config_for_chain_id, l1_config_for_l2_chain_id,
-    sepolia_l1_config,
+    default_l1_config, default_rollup_config, l1_config_for_l2_chain_id, sepolia_l1_config,
 };

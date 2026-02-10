@@ -2,16 +2,13 @@
 
 use std::sync::Arc;
 
-use alloy_consensus::{Header, ReceiptEnvelope};
 use alloy_primitives::{B256, Bytes};
 use jsonrpsee::core::client::ClientT;
 use jsonrpsee::http_client::{HttpClient, HttpClientBuilder};
 use jsonrpsee::rpc_params;
 use serde::{Deserialize, Serialize};
 
-use op_enclave_core::executor::ExecutionWitness;
-use op_enclave_core::types::account::AccountResult;
-use op_enclave_core::{ChainConfig, Proposal};
+use op_enclave_core::{ExecuteStatelessRequest, Proposal};
 
 use crate::client_error::ClientError;
 
@@ -66,32 +63,6 @@ mod danger {
             ]
         }
     }
-}
-
-/// Request for the `executeStateless` RPC method.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExecuteStatelessRequest {
-    /// The full chain configuration.
-    pub config: ChainConfig,
-    /// The per-chain configuration hash used in proposal signing.
-    pub config_hash: B256,
-    /// The L1 origin block header.
-    pub l1_origin: Header,
-    /// The L1 origin block receipts.
-    pub l1_receipts: Vec<ReceiptEnvelope>,
-    /// Transactions from the previous L2 block (RLP-encoded).
-    pub previous_block_txs: Vec<Bytes>,
-    /// The L2 block header to validate.
-    pub block_header: Header,
-    /// Sequenced transactions for this block (RLP-encoded).
-    pub sequenced_txs: Vec<Bytes>,
-    /// The execution witness.
-    pub witness: ExecutionWitness,
-    /// The `L2ToL1MessagePasser` account proof.
-    pub message_account: AccountResult,
-    /// The storage hash of the message account in the previous block.
-    pub prev_message_account_hash: B256,
 }
 
 /// Request for the `aggregate` RPC method.

@@ -9,4 +9,5 @@ mod types;
 
 pub use api::{EnclaveApiClient, EnclaveApiServer};
 pub use server::RpcServerImpl;
-pub use types::{AggregateRequest, ExecuteStatelessRequest};
+pub use op_enclave_core::ExecuteStatelessRequest;
+pub use types::AggregateRequest;

@@ -160,25 +160,11 @@ pub fn sepolia_l1_config() -> L1ChainConfig {
     }
 }
 
-/// Return the L1 config for a known chain ID.
-///
-/// Supports:
-/// - `1` (Ethereum mainnet)
-/// - `11155111` (Sepolia)
-#[must_use]
-pub fn l1_config_for_chain_id(chain_id: u64) -> Option<L1ChainConfig> {
-    match chain_id {
-        1 => Some(default_l1_config()),
-        11_155_111 => Some(sepolia_l1_config()),
-        _ => None,
-    }
-}
-
 /// Return the L1 config inferred from a known L2 chain ID.
 ///
 /// Supports common OP Stack chains:
-/// - mainnet-backed L2s (`1`, `10`, `8453`) -> Ethereum mainnet L1
-/// - sepolia-backed L2s (`11155111`, `11155420`, `84532`) -> Sepolia L1
+/// - mainnet-backed L2s (`8453`) -> Ethereum mainnet L1
+/// - sepolia-backed L2s (`84532`) -> Sepolia L1
 #[must_use]
 pub fn l1_config_for_l2_chain_id(l2_chain_id: u64) -> Option<L1ChainConfig> {
     match l2_chain_id {
