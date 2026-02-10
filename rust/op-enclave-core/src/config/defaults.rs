@@ -174,6 +174,22 @@ pub fn l1_config_for_chain_id(chain_id: u64) -> Option<L1ChainConfig> {
     }
 }
 
+/// Return the L1 config inferred from a known L2 chain ID.
+///
+/// Supports common OP Stack chains:
+/// - mainnet-backed L2s (`1`, `10`, `8453`) -> Ethereum mainnet L1
+/// - sepolia-backed L2s (`11155111`, `11155420`, `84532`) -> Sepolia L1
+#[must_use]
+pub fn l1_config_for_l2_chain_id(l2_chain_id: u64) -> Option<L1ChainConfig> {
+    match l2_chain_id {
+        // Mainnet-backed L2s
+        8453 => Some(default_l1_config()),
+        // Sepolia-backed L2s
+        84_532 => Some(sepolia_l1_config()),
+        _ => None,
+    }
+}
+
 /// Create default genesis configuration.
 fn default_genesis() -> ChainGenesis {
     ChainGenesis {
@@ -223,5 +239,16 @@ mod tests {
     fn test_default_gas_limit() {
         let config = default_rollup_config();
         assert_eq!(config.genesis.system_config.unwrap().gas_limit, 30_000_000);
+    }
+
+    #[test]
+    fn test_l1_config_for_l2_chain_id() {
+        assert_eq!(l1_config_for_l2_chain_id(8453).unwrap().chain_id, 1);
+        assert_eq!(l1_config_for_l2_chain_id(84532).unwrap().chain_id, 11_155_111);
+        assert_eq!(
+            l1_config_for_l2_chain_id(11_155_420).unwrap().chain_id,
+            11_155_111
+        );
+        assert!(l1_config_for_l2_chain_id(42).is_none());
     }
 }
