@@ -81,7 +81,7 @@ impl EnclaveApiServer for RpcServerImpl {
         let l1_config = l1_config_for_l2_chain_id(l2_chain_id).ok_or_else(|| {
             ErrorObjectOwned::owned(
                 -32000,
-                format!("unsupported l2 chain id: {}", l2_chain_id),
+                format!("unsupported l2 chain id: {l2_chain_id}"),
                 None::<()>,
             )
         })?;
